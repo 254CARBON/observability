@@ -1,0 +1,134 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: k6-synthetic-alerts
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: alert-rules
+    severity: warn
+spec:
+  groups:
+    - name: k6.synthetic.alerts
+      rules:
+        # Synthetic test failure alert
+        - alert: ALERT_SYNTHETIC_TEST_FAILURE
+          expr: |
+            gateway_synthetic_error_rate > 0.05
+          for: 2m
+          labels:
+            severity: warning
+            component: "synthetic"
+            test_type: "api"
+          annotations:
+            summary: "Synthetic API test failure rate high"
+            description: "Gateway synthetic API test error rate is {{ $value | humanizePercentage }} over 2 minutes. This indicates potential service degradation."
+            
+        # WebSocket connection failure alert
+        - alert: ALERT_WEBSOCKET_CONNECTION_FAILURE
+          expr: |
+            websocket_connection_error_rate > 0.1
+          for: 2m
+          labels:
+            severity: warning
+            component: "synthetic"
+            test_type: "websocket"
+          annotations:
+            summary: "WebSocket connection failure rate high"
+            description: "WebSocket synthetic test connection error rate is {{ $value | humanizePercentage }} over 2 minutes. Real-time features may be affected."
+            
+        # Load test failure alert
+        - alert: ALERT_LOAD_TEST_FAILURE
+          expr: |
+            load_test_error_rate > 0.03
+          for: 2m
+          labels:
+            severity: warning
+            component: "synthetic"
+            test_type: "load"
+          annotations:
+            summary: "Load test failure rate high"
+            description: "Load test error rate is {{ $value | humanizePercentage }} over 2 minutes. System may not handle expected load."
+            
+        # Synthetic test response time alert
+        - alert: ALERT_SYNTHETIC_HIGH_RESPONSE_TIME
+          expr: |
+            gateway_synthetic_response_time > 200
+          for: 5m
+          labels:
+            severity: warning
+            component: "synthetic"
+            test_type: "api"
+          annotations:
+            summary: "Synthetic test response time high"
+            description: "Gateway synthetic API test response time is {{ $value }}ms over 5 minutes. User experience may be degraded."
+            
+        # WebSocket message latency alert
+        - alert: ALERT_WEBSOCKET_HIGH_LATENCY
+          expr: |
+            websocket_message_latency > 100
+          for: 5m
+          labels:
+            severity: warning
+            component: "synthetic"
+            test_type: "websocket"
+          annotations:
+            summary: "WebSocket message latency high"
+            description: "WebSocket message latency is {{ $value }}ms over 5 minutes. Real-time performance may be affected."
+            
+        # Load test response time alert
+        - alert: ALERT_LOAD_TEST_HIGH_RESPONSE_TIME
+          expr: |
+            load_test_response_time > 400
+          for: 5m
+          labels:
+            severity: warning
+            component: "synthetic"
+            test_type: "load"
+          annotations:
+            summary: "Load test response time high"
+            description: "Load test response time is {{ $value }}ms over 5 minutes. System performance under load may be degraded."
+            
+        # Synthetic test availability alert
+        - alert: ALERT_SYNTHETIC_TEST_UNAVAILABLE
+          expr: |
+            up{job="k6"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            component: "synthetic"
+          annotations:
+            summary: "Synthetic tests unavailable"
+            description: "K6 synthetic tests are not running. Proactive monitoring may be interrupted."
+            
+        # Synthetic test threshold breach alert
+        - alert: ALERT_SYNTHETIC_THRESHOLD_BREACH
+          expr: |
+            (
+              gateway_synthetic_error_rate > 0.1 OR
+              websocket_connection_error_rate > 0.2 OR
+              load_test_error_rate > 0.05
+            )
+          for: 1m
+          labels:
+            severity: critical
+            component: "synthetic"
+          annotations:
+            summary: "Synthetic test threshold breached"
+            description: "One or more synthetic test thresholds have been breached. Immediate investigation required."
+            
+        # Synthetic test performance degradation alert
+        - alert: ALERT_SYNTHETIC_PERFORMANCE_DEGRADATION
+          expr: |
+            (
+              gateway_synthetic_response_time > 300 OR
+              websocket_message_latency > 200 OR
+              load_test_response_time > 600
+            )
+          for: 3m
+          labels:
+            severity: warning
+            component: "synthetic"
+          annotations:
+            summary: "Synthetic test performance degradation"
+            description: "Synthetic test performance has degraded significantly. System may be experiencing issues."

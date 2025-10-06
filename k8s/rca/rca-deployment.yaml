@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rca-service
+  namespace: observability
+  labels:
+    app: rca-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: rca-service
+  template:
+    metadata:
+      labels:
+        app: rca-service
+    spec:
+      containers:
+        - name: rca-service
+          image: busybox # Placeholder image, replace with actual service image
+          command: ["/bin/sh", "-c", "echo 'RCA Service running (placeholder)'; sleep 3600"] # Placeholder command
+          ports:
+            - containerPort: 8080 # For exposing API
+            - containerPort: 9090 # For exposing metrics
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/rca
+          env:
+            - name: RCA_CONFIG_PATH
+              value: "/etc/rca/config.yaml"
+            - name: PROMETHEUS_ENDPOINT
+              value: "http://prometheus-server.observability.svc.cluster.local:9090"
+            - name: TEMPO_ENDPOINT
+              value: "http://tempo.observability.svc.cluster.local:3200"
+            - name: LOKI_ENDPOINT
+              value: "http://loki.observability.svc.cluster.local:3100"
+            - name: ALERTMANAGER_ENDPOINT
+              value: "http://alertmanager.observability.svc.cluster.local:9093"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+      volumes:
+        - name: config-volume
+          configMap:
+            name: rca-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rca-service
+  namespace: observability
+  labels:
+    app: rca-service
+spec:
+  type: ClusterIP
+  selector:
+    app: rca-service
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+      name: api
+    - protocol: TCP
+      port: 9090
+      targetPort: 9090
+      name: metrics
+---
+# ServiceMonitor for RCA metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rca-service
+  namespace: observability
+  labels:
+    app: rca-service
+spec:
+  selector:
+    matchLabels:
+      app: rca-service
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics

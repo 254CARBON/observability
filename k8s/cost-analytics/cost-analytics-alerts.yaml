@@ -1,0 +1,284 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cost-analytics-alerts
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: alert-rules
+    severity: page
+spec:
+  groups:
+    - name: cost.analytics.alerts
+      rules:
+        # Cost threshold alerts
+        - alert: CostAnalyticsDailyBudgetExceeded
+          expr: cost_analytics_budget_utilization:daily > 1.0
+          for: 5m
+          labels:
+            severity: page
+            category: cost
+          annotations:
+            summary: "Daily cost budget exceeded"
+            description: "Daily cost budget has been exceeded. Current cost: ${{ $value | printf \"%.2f\" }}"
+            
+        - alert: CostAnalyticsWeeklyBudgetExceeded
+          expr: cost_analytics_budget_utilization:weekly > 1.0
+          for: 10m
+          labels:
+            severity: page
+            category: cost
+          annotations:
+            summary: "Weekly cost budget exceeded"
+            description: "Weekly cost budget has been exceeded. Current cost: ${{ $value | printf \"%.2f\" }}"
+            
+        - alert: CostAnalyticsMonthlyBudgetExceeded
+          expr: cost_analytics_budget_utilization:monthly > 1.0
+          for: 30m
+          labels:
+            severity: page
+            category: cost
+          annotations:
+            summary: "Monthly cost budget exceeded"
+            description: "Monthly cost budget has been exceeded. Current cost: ${{ $value | printf \"%.2f\" }}"
+            
+        # Cost growth alerts
+        - alert: CostAnalyticsHighGrowthRate
+          expr: cost_analytics_cost_trend:growth_rate > 0.5
+          for: 15m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "High cost growth rate detected"
+            description: "Cost growth rate is {{ $value | humanizePercentage }} over the last 24 hours"
+            
+        - alert: CostAnalyticsExtremeGrowthRate
+          expr: cost_analytics_cost_trend:growth_rate > 1.0
+          for: 5m
+          labels:
+            severity: page
+            category: cost
+          annotations:
+            summary: "Extreme cost growth rate detected"
+            description: "Cost growth rate is {{ $value | humanizePercentage }} over the last 24 hours"
+            
+        # Cost anomaly alerts
+        - alert: CostAnalyticsAnomalyDetected
+          expr: cost_analytics_anomaly_score > cost_analytics_anomaly_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "Cost anomaly detected"
+            description: "Unusual cost pattern detected. Anomaly score: {{ $value | printf \"%.2f\" }}"
+            
+        # Cost efficiency alerts
+        - alert: CostAnalyticsLowEfficiency
+          expr: cost_analytics_efficiency_score > cost_analytics_efficiency_threshold
+          for: 30m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "Low cost efficiency detected"
+            description: "Cost efficiency is below threshold. Current efficiency score: ${{ $value | printf \"%.2f\" }}"
+            
+        # Cost per resource alerts
+        - alert: CostAnalyticsHighCostPerRequest
+          expr: cost_analytics_cost_per_request > 0.01
+          for: 15m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "High cost per request"
+            description: "Cost per request is ${{ $value | printf \"%.4f\" }}, above threshold of $0.01"
+            
+        - alert: CostAnalyticsHighCostPerCPU
+          expr: cost_analytics_cost_per_cpu_core > 0.1
+          for: 15m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "High cost per CPU core"
+            description: "Cost per CPU core is ${{ $value | printf \"%.2f\" }}, above threshold of $0.10"
+            
+        - alert: CostAnalyticsHighCostPerMemory
+          expr: cost_analytics_cost_per_gb_memory > 0.05
+          for: 15m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "High cost per GB memory"
+            description: "Cost per GB memory is ${{ $value | printf \"%.2f\" }}, above threshold of $0.05"
+            
+        # Cost optimization alerts
+        - alert: CostAnalyticsHighOptimizationPotential
+          expr: cost_analytics_optimization_potential:right_sizing > 0.2
+          for: 30m
+          labels:
+            severity: info
+            category: cost
+          annotations:
+            summary: "High right-sizing optimization potential"
+            description: "Right-sizing optimization could save {{ $value | humanizePercentage }} of current costs"
+            
+        - alert: CostAnalyticsReservedInstanceOpportunity
+          expr: cost_analytics_optimization_potential:reserved_instances > 0.3
+          for: 1h
+          labels:
+            severity: info
+            category: cost
+          annotations:
+            summary: "Reserved instance opportunity"
+            description: "Reserved instances could save {{ $value | humanizePercentage }} of current costs"
+            
+        - alert: CostAnalyticsAutoScalingOpportunity
+          expr: cost_analytics_optimization_potential:auto_scaling > 0.15
+          for: 1h
+          labels:
+            severity: info
+            category: cost
+          annotations:
+            summary: "Auto-scaling opportunity"
+            description: "Auto-scaling could save {{ $value | humanizePercentage }} of current costs"
+            
+        # Cost forecasting alerts
+        - alert: CostAnalyticsForecastBudgetExceeded
+          expr: cost_analytics_forecast:next_day > cost_analytics_budget:daily
+          for: 30m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "Forecasted cost exceeds budget"
+            description: "Forecasted cost for next day is ${{ $value | printf \"%.2f\" }}, exceeding daily budget"
+            
+        - alert: CostAnalyticsForecastWeeklyBudgetExceeded
+          expr: cost_analytics_forecast:next_week > cost_analytics_budget:weekly
+          for: 1h
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "Forecasted cost exceeds weekly budget"
+            description: "Forecasted cost for next week is ${{ $value | printf \"%.2f\" }}, exceeding weekly budget"
+            
+        # Cost allocation alerts
+        - alert: CostAnalyticsServiceCostSpike
+          expr: cost_analytics_total_cost:sum{service="gateway"} > 50.0
+          for: 10m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "Gateway service cost spike"
+            description: "Gateway service cost is ${{ $value | printf \"%.2f\" }}, above threshold of $50.00"
+            
+        - alert: CostAnalyticsInfrastructureCostSpike
+          expr: cost_analytics_total_cost:sum{service="infrastructure"} > 100.0
+          for: 10m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "Infrastructure cost spike"
+            description: "Infrastructure cost is ${{ $value | printf \"%.2f\" }}, above threshold of $100.00"
+            
+        # Cost correlation alerts
+        - alert: CostAnalyticsHighCostPerError
+          expr: cost_analytics_cost_correlation:errors > 1.0
+          for: 15m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "High cost per error"
+            description: "Cost per error is ${{ $value | printf \"%.2f\" }}, indicating inefficient error handling"
+            
+        - alert: CostAnalyticsHighCostPerLatency
+          expr: cost_analytics_cost_correlation:latency > 0.5
+          for: 15m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "High cost per latency"
+            description: "Cost per latency is ${{ $value | printf \"%.2f\" }}, indicating performance issues"
+            
+        # Cost service health alerts
+        - alert: CostAnalyticsServiceDown
+          expr: up{job="cost-analytics"} == 0
+          for: 1m
+          labels:
+            severity: page
+            category: cost
+          annotations:
+            summary: "Cost analytics service is down"
+            description: "Cost analytics service has been down for more than 1 minute"
+            
+        - alert: CostAnalyticsServiceHighLatency
+          expr: cost_analytics_query_duration_seconds > 30.0
+          for: 5m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "Cost analytics service high latency"
+            description: "Cost analytics service queries are taking {{ $value }}s, above threshold of 30s"
+            
+        - alert: CostAnalyticsServiceHighErrorRate
+          expr: rate(cost_analytics_query_errors_total[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "Cost analytics service high error rate"
+            description: "Cost analytics service error rate is {{ $value | humanizePercentage }}, above threshold of 10%"
+            
+        # Cost data quality alerts
+        - alert: CostAnalyticsDataStale
+          expr: time() - cost_analytics_total_cost:sum > 3600
+          for: 5m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "Cost analytics data is stale"
+            description: "Cost analytics data is {{ $value }}s old, above threshold of 1 hour"
+            
+        - alert: CostAnalyticsDataMissing
+          expr: absent(cost_analytics_total_cost:sum)
+          for: 5m
+          labels:
+            severity: page
+            category: cost
+          annotations:
+            summary: "Cost analytics data is missing"
+            description: "Cost analytics data has been missing for more than 5 minutes"
+            
+        # Cost reporting alerts
+        - alert: CostAnalyticsReportGenerationFailed
+          expr: rate(cost_analytics_query_errors_total{error_type="report_generation"}[5m]) > 0
+          for: 1m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "Cost analytics report generation failed"
+            description: "Cost analytics report generation has failed"
+            
+        - alert: CostAnalyticsDashboardUpdateFailed
+          expr: rate(cost_analytics_query_errors_total{error_type="dashboard_update"}[5m]) > 0
+          for: 1m
+          labels:
+            severity: warning
+            category: cost
+          annotations:
+            summary: "Cost analytics dashboard update failed"
+            description: "Cost analytics dashboard update has failed"

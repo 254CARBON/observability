@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pyroscope
+  namespace: observability
+  labels:
+    app: pyroscope
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pyroscope
+  template:
+    metadata:
+      labels:
+        app: pyroscope
+    spec:
+      containers:
+        - name: pyroscope
+          image: grafana/pyroscope:1.5.0
+          args:
+            - "-config.file=/etc/pyroscope/pyroscope.yaml"
+          ports:
+            - name: http
+              containerPort: 4040
+            - name: grpc
+              containerPort: 4041
+          env:
+            - name: PYROSCOPE_LOG_LEVEL
+              value: "info"
+            - name: PYROSCOPE_STORAGE_PATH
+              value: "/var/lib/pyroscope"
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 200m
+          volumeMounts:
+            - name: pyroscope-config-volume
+              mountPath: /etc/pyroscope
+            - name: pyroscope-storage
+              mountPath: /var/lib/pyroscope
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4040
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4040
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: pyroscope-config-volume
+          configMap:
+            name: pyroscope-config
+        - name: pyroscope-storage
+          emptyDir: {} # For local dev, use PVC for production
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pyroscope
+  namespace: observability
+  labels:
+    app: pyroscope
+spec:
+  type: ClusterIP
+  selector:
+    app: pyroscope
+  ports:
+    - name: http
+      protocol: TCP
+      port: 4040
+      targetPort: 4040
+    - name: grpc
+      protocol: TCP
+      port: 4041
+      targetPort: 4041
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pyroscope-headless
+  namespace: observability
+  labels:
+    app: pyroscope
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: pyroscope
+  ports:
+    - name: http
+      protocol: TCP
+      port: 4040
+      targetPort: 4040
+    - name: grpc
+      protocol: TCP
+      port: 4041
+      targetPort: 4041

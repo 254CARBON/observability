@@ -1,0 +1,334 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ml-alerting-recording-rules
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: recording-rules
+spec:
+  groups:
+    - name: ml.alerting.rules
+      rules:
+        # ML prediction accuracy rules
+        - record: ml_alerting_prediction_accuracy:avg
+          expr: avg by (model_type) (ml_alerting_prediction_accuracy)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_prediction_accuracy:max
+          expr: max by (model_type) (ml_alerting_prediction_accuracy)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_prediction_accuracy:min
+          expr: min by (model_type) (ml_alerting_prediction_accuracy)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_prediction_accuracy:rate5m
+          expr: avg by (model_type) (rate(ml_alerting_prediction_accuracy[5m]))
+          labels:
+            component: ml-alerting
+            
+        # ML prediction latency rules
+        - record: ml_alerting_prediction_latency:avg
+          expr: avg by (model_type) (ml_alerting_prediction_latency_seconds)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_prediction_latency:p95
+          expr: histogram_quantile(0.95, ml_alerting_prediction_latency_seconds)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_prediction_latency:p99
+          expr: histogram_quantile(0.99, ml_alerting_prediction_latency_seconds)
+          labels:
+            component: ml-alerting
+            
+        # ML model drift rules
+        - record: ml_alerting_model_drift:avg
+          expr: avg by (model_type) (ml_alerting_model_drift)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_drift:max
+          expr: max by (model_type) (ml_alerting_model_drift)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_drift:rate1h
+          expr: avg by (model_type) (rate(ml_alerting_model_drift[1h]))
+          labels:
+            component: ml-alerting
+            
+        # ML feature importance rules
+        - record: ml_alerting_feature_importance:avg
+          expr: avg by (model_type, feature) (ml_alerting_feature_importance)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_feature_importance:max
+          expr: max by (model_type, feature) (ml_alerting_feature_importance)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_feature_importance:sum
+          expr: sum by (model_type) (ml_alerting_feature_importance)
+          labels:
+            component: ml-alerting
+            
+        # ML prediction confidence rules
+        - record: ml_alerting_prediction_confidence:avg
+          expr: avg by (model_type, prediction_type) (ml_alerting_prediction_confidence)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_prediction_confidence:max
+          expr: max by (model_type, prediction_type) (ml_alerting_prediction_confidence)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_prediction_confidence:min
+          expr: min by (model_type, prediction_type) (ml_alerting_prediction_confidence)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_prediction_confidence:rate5m
+          expr: avg by (model_type, prediction_type) (rate(ml_alerting_prediction_confidence[5m]))
+          labels:
+            component: ml-alerting
+            
+        # ML training duration rules
+        - record: ml_alerting_training_duration:avg
+          expr: avg by (model_type) (ml_alerting_training_duration_seconds)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_training_duration:p95
+          expr: histogram_quantile(0.95, ml_alerting_training_duration_seconds)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_training_duration:p99
+          expr: histogram_quantile(0.99, ml_alerting_training_duration_seconds)
+          labels:
+            component: ml-alerting
+            
+        # ML training error rules
+        - record: ml_alerting_training_errors:rate5m
+          expr: sum by (model_type) (rate(ml_alerting_training_errors_total[5m]))
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_training_errors:rate1h
+          expr: sum by (model_type) (rate(ml_alerting_training_errors_total[1h]))
+          labels:
+            component: ml-alerting
+            
+        # ML model health rules
+        - record: ml_alerting_model_health_score
+          expr: |
+            (
+              ml_alerting_prediction_accuracy:avg
+              +
+              (1 - ml_alerting_prediction_latency:avg)
+              +
+              (1 - ml_alerting_model_drift:avg)
+            ) / 3
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_health_threshold
+          expr: 0.7
+          labels:
+            component: ml-alerting
+            
+        # ML model performance rules
+        - record: ml_alerting_model_performance_score
+          expr: |
+            (
+              ml_alerting_prediction_accuracy:avg
+              *
+              ml_alerting_prediction_confidence:avg
+              *
+              (1 - ml_alerting_prediction_latency:avg)
+            ) ^ (1/3)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_performance_threshold
+          expr: 0.6
+          labels:
+            component: ml-alerting
+            
+        # ML model efficiency rules
+        - record: ml_alerting_model_efficiency_score
+          expr: |
+            (
+              ml_alerting_prediction_accuracy:avg
+              /
+              ml_alerting_prediction_latency:avg
+            )
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_efficiency_threshold
+          expr: 10.0
+          labels:
+            component: ml-alerting
+            
+        # ML model reliability rules
+        - record: ml_alerting_model_reliability_score
+          expr: |
+            1 - (
+              ml_alerting_training_errors:rate5m
+              /
+              ml_alerting_prediction_accuracy:avg
+            )
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_reliability_threshold
+          expr: 0.9
+          labels:
+            component: ml-alerting
+            
+        # ML model scalability rules
+        - record: ml_alerting_model_scalability_score
+          expr: |
+            ml_alerting_prediction_latency:avg < 1.0
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_scalability_threshold
+          expr: 0.8
+          labels:
+            component: ml-alerting
+            
+        # ML model quality rules
+        - record: ml_alerting_model_quality_score
+          expr: |
+            (
+              ml_alerting_prediction_accuracy:avg > 0.8
+              +
+              ml_alerting_prediction_confidence:avg > 0.7
+              +
+              ml_alerting_model_drift:avg < 0.1
+            ) / 3
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_quality_threshold
+          expr: 0.7
+          labels:
+            component: ml-alerting
+            
+        # ML model accuracy rules
+        - record: ml_alerting_model_accuracy_score
+          expr: |
+            ml_alerting_prediction_accuracy:avg
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_accuracy_threshold
+          expr: 0.8
+          labels:
+            component: ml-alerting
+            
+        # ML model precision rules
+        - record: ml_alerting_model_precision_score
+          expr: |
+            ml_alerting_prediction_accuracy:avg
+            /
+            (ml_alerting_prediction_accuracy:avg + ml_alerting_training_errors:rate5m)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_precision_threshold
+          expr: 0.9
+          labels:
+            component: ml-alerting
+            
+        # ML model recall rules
+        - record: ml_alerting_model_recall_score
+          expr: |
+            ml_alerting_prediction_accuracy:avg
+            /
+            (ml_alerting_prediction_accuracy:avg + ml_alerting_model_drift:avg)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_recall_threshold
+          expr: 0.9
+          labels:
+            component: ml-alerting
+            
+        # ML model F1 score rules
+        - record: ml_alerting_model_f1_score
+          expr: |
+            2 * (
+              ml_alerting_model_precision_score
+              *
+              ml_alerting_model_recall_score
+            ) / (
+              ml_alerting_model_precision_score
+              +
+              ml_alerting_model_recall_score
+            )
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_f1_threshold
+          expr: 0.8
+          labels:
+            component: ml-alerting
+            
+        # ML model AUC rules
+        - record: ml_alerting_model_auc_score
+          expr: |
+            ml_alerting_prediction_accuracy:avg
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_auc_threshold
+          expr: 0.8
+          labels:
+            component: ml-alerting
+            
+        # ML model MAE rules
+        - record: ml_alerting_model_mae_score
+          expr: |
+            1 - ml_alerting_prediction_accuracy:avg
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_mae_threshold
+          expr: 0.2
+          labels:
+            component: ml-alerting
+            
+        # ML model RMSE rules
+        - record: ml_alerting_model_rmse_score
+          expr: |
+            sqrt(1 - ml_alerting_prediction_accuracy:avg)
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_rmse_threshold
+          expr: 0.3
+          labels:
+            component: ml-alerting
+            
+        # ML model MAPE rules
+        - record: ml_alerting_model_mape_score
+          expr: |
+            abs(1 - ml_alerting_prediction_accuracy:avg) / ml_alerting_prediction_accuracy:avg
+          labels:
+            component: ml-alerting
+            
+        - record: ml_alerting_model_mape_threshold
+          expr: 0.1
+          labels:
+            component: ml-alerting

@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-config
+  namespace: observability
+# Tempo configuration using MinIO for S3-compatible storage in local/dev.
+data:
+  tempo.yaml: |
+    server:
+      http_listen_port: 3200
+      grpc_listen_port: 9095
+    
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+    
+    ingester:
+      max_block_duration: 5m
+      max_block_bytes: 1073741824  # 1GB
+    
+    querier:
+      frontend_worker:
+        frontend_address: tempo-query-frontend:9095
+    
+    query_frontend:
+      search:
+        duration_slo: 5s
+        throughput_bytes_slo: 1.073741824e+09  # 1GB
+    
+    compactor:
+      compaction:
+        block_retention: 48h
+        compacted_block_retention: 168h  # 7 days
+    
+    storage:
+      trace:
+        backend: s3
+        s3:
+          bucket: tempo-traces
+          endpoint: minio:9000
+          insecure: true
+          access_key: tempo
+          secret_key: tempo123
+        pool:
+          max_workers: 100
+          queue_depth: 10000
+    
+    overrides:
+      defaults:
+        max_traces_per_user: 10000
+        max_bytes_per_trace: 1048576  # 1MB
+        max_search_duration: 168h  # 7 days

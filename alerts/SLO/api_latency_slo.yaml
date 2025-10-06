@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-latency-slo-alerts
+  namespace: observability
+# Alerting rules for API latency SLO violations and error budget exhaustion.
+data:
+  api-latency-slo.yaml: |
+    groups:
+    - name: api-latency-slo
+      rules:
+      # API Latency SLO Violation (Multi-window burn rate)
+      - alert: ALERT_API_LATENCY_SLO_VIOLATION_FAST
+        expr: |
+          (
+            gateway:http_request_duration_seconds:p95 > 0.15
+            and
+            gateway:http_request_duration_seconds:p95 > 0.15 offset 5m
+          )
+        for: 5m
+        labels:
+          severity: critical
+          service: gateway
+          alert_type: slo_violation
+          slo_target: "0.15s"
+          burn_rate_window: "fast"
+        annotations:
+          summary: "API Latency SLO violation (fast burn rate)"
+          description: "P95 latency {{ $value }}s exceeds SLO target 0.15s for 5+ minutes"
+          runbook_url: "https://docs.254carbon.local/runbooks/api-latency-slo-violation"
+      
+      - alert: ALERT_API_LATENCY_SLO_VIOLATION_SLOW
+        expr: gateway:http_request_duration_seconds:p95 > 0.15
+        for: 15m
+        labels:
+          severity: warning
+          service: gateway
+          alert_type: slo_violation
+          slo_target: "0.15s"
+          burn_rate_window: "slow"
+        annotations:
+          summary: "API Latency SLO violation (slow burn rate)"
+          description: "P95 latency {{ $value }}s exceeds SLO target 0.15s for 15+ minutes"
+          runbook_url: "https://docs.254carbon.local/runbooks/api-latency-slo-violation"
+      
+      # Error Budget Exhaustion Warning
+      - alert: ALERT_API_ERROR_BUDGET_EXHAUSTION_WARNING
+        expr: gateway:error_budget:remaining < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: gateway
+          alert_type: error_budget
+        annotations:
+          summary: "API error budget exhaustion warning"
+          description: "Error budget remaining: {{ $value | humanizePercentage }}"
+          runbook_url: "https://docs.254carbon.local/runbooks/error-budget-exhaustion"
+      
+      # Error Budget Exhaustion Critical
+      - alert: ALERT_API_ERROR_BUDGET_EXHAUSTION_CRITICAL
+        expr: gateway:error_budget:remaining < 0.05
+        for: 1m
+        labels:
+          severity: critical
+          service: gateway
+          alert_type: error_budget
+        annotations:
+          summary: "API error budget exhaustion critical"
+          description: "Error budget remaining: {{ $value | humanizePercentage }}"
+          runbook_url: "https://docs.254carbon.local/runbooks/error-budget-exhaustion"

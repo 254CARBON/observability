@@ -1,0 +1,112 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dependency-graph-alerts
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: alert-rules
+    severity: warn
+spec:
+  groups:
+    - name: dependency.graph.alerts
+      rules:
+        # Service dependency failure alert
+        - alert: ALERT_SERVICE_DEPENDENCY_FAILURE
+          expr: |
+            dependency_graph:service_error_rate > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            component: "dependency_graph"
+          annotations:
+            summary: "Service dependency failure rate high"
+            description: "Service {{ $labels.service }} has a high error rate of {{ $value | humanizePercentage }} over 5 minutes. This may indicate dependency issues."
+            
+        # Service bottleneck alert
+        - alert: ALERT_SERVICE_BOTTLENECK
+          expr: |
+            dependency_graph:bottleneck_score > 0
+          for: 3m
+          labels:
+            severity: warning
+            component: "dependency_graph"
+          annotations:
+            summary: "Service bottleneck detected"
+            description: "Service {{ $labels.service }} is acting as a bottleneck with high call volume, error rate, and latency."
+            
+        # Critical path degradation alert
+        - alert: ALERT_CRITICAL_PATH_DEGRADATION
+          expr: |
+            dependency_graph:critical_path_latency > 2
+          for: 5m
+          labels:
+            severity: warning
+            component: "dependency_graph"
+          annotations:
+            summary: "Critical path performance degraded"
+            description: "Critical path {{ $labels.path }} has high latency of {{ $value }}s over 5 minutes. End-to-end performance may be affected."
+            
+        # Service health score alert
+        - alert: ALERT_SERVICE_HEALTH_LOW
+          expr: |
+            dependency_graph:service_health_score < 70
+          for: 10m
+          labels:
+            severity: warning
+            component: "dependency_graph"
+          annotations:
+            summary: "Service health score low"
+            description: "Service {{ $labels.service }} has a low health score of {{ $value }} over 10 minutes. Service may be experiencing issues."
+            
+        # Service dependency count alert
+        - alert: ALERT_SERVICE_TOO_MANY_DEPENDENCIES
+          expr: |
+            dependency_graph:service_dependencies_count > 10
+          for: 5m
+          labels:
+            severity: warning
+            component: "dependency_graph"
+          annotations:
+            summary: "Service has too many dependencies"
+            description: "Service {{ $labels.service }} has {{ $value }} dependencies, which may indicate a single point of failure."
+            
+        # Service dependency graph unavailable alert
+        - alert: ALERT_DEPENDENCY_GRAPH_UNAVAILABLE
+          expr: |
+            up{job="dependency-graph"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            component: "dependency_graph"
+          annotations:
+            summary: "Dependency graph service unavailable"
+            description: "Dependency graph service is not responding. Service dependency analysis may be interrupted."
+            
+        # Service isolation alert
+        - alert: ALERT_SERVICE_ISOLATION
+          expr: |
+            dependency_graph:service_dependencies_count == 0 AND
+            dependency_graph:service_dependents_count == 0
+          for: 10m
+          labels:
+            severity: warning
+            component: "dependency_graph"
+          annotations:
+            summary: "Service appears isolated"
+            description: "Service {{ $labels.service }} has no dependencies or dependents, which may indicate it's not properly integrated."
+            
+        # Service cascade failure alert
+        - alert: ALERT_SERVICE_CASCADE_FAILURE
+          expr: |
+            (
+              dependency_graph:service_error_rate > 0.2 AND
+              dependency_graph:service_dependents_count > 5
+            )
+          for: 2m
+          labels:
+            severity: critical
+            component: "dependency_graph"
+          annotations:
+            summary: "Service cascade failure risk"
+            description: "Service {{ $labels.service }} has high error rate ({{ $value | humanizePercentage }}) and many dependents. Risk of cascade failure."

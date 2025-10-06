@@ -1,0 +1,166 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rca-config
+  namespace: observability
+data:
+  config.yaml: |
+    # Root Cause Analysis Configuration for 254Carbon Observability
+    # This service would analyze incidents and automatically identify root causes
+    
+    # Data sources for RCA
+    data_sources:
+      prometheus:
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090/api/v1/query"
+        timeout: "30s"
+        retry_attempts: 3
+      tempo:
+        endpoint: "http://tempo.observability.svc.cluster.local:3200/api/v2/search"
+        timeout: "30s"
+        retry_attempts: 3
+      loki:
+        endpoint: "http://loki.observability.svc.cluster.local:3100/loki/api/v1/query"
+        timeout: "30s"
+        retry_attempts: 3
+      alertmanager:
+        endpoint: "http://alertmanager.observability.svc.cluster.local:9093/api/v2/alerts"
+        timeout: "30s"
+        retry_attempts: 3
+    
+    # RCA algorithms configuration
+    algorithms:
+      # Statistical analysis for anomaly detection
+      statistical_analysis:
+        enabled: true
+        methods:
+          - "z_score"
+          - "isolation_forest"
+          - "local_outlier_factor"
+        threshold: 0.8
+        lookback_window: "1h"
+      
+      # Dependency analysis for service impact
+      dependency_analysis:
+        enabled: true
+        methods:
+          - "service_dependency_graph"
+          - "impact_analysis"
+          - "cascade_failure_detection"
+        max_depth: 5
+        impact_threshold: 0.7
+      
+      # Temporal analysis for event correlation
+      temporal_analysis:
+        enabled: true
+        methods:
+          - "event_correlation"
+          - "time_series_analysis"
+          - "pattern_matching"
+        correlation_window: "15m"
+        pattern_threshold: 0.6
+      
+      # Log analysis for error patterns
+      log_analysis:
+        enabled: true
+        methods:
+          - "error_pattern_extraction"
+          - "log_clustering"
+          - "anomaly_detection"
+        log_levels: ["ERROR", "FATAL", "PANIC"]
+        pattern_threshold: 0.7
+      
+      # Trace analysis for performance issues
+      trace_analysis:
+        enabled: true
+        methods:
+          - "latency_analysis"
+          - "error_trace_analysis"
+          - "bottleneck_detection"
+        latency_threshold: 1000  # ms
+        error_threshold: 0.05    # 5%
+    
+    # RCA rules and patterns
+    rules:
+      # Service failure patterns
+      service_failure:
+        - name: "database_connection_failure"
+          pattern: "database.*connection.*failed"
+          severity: "critical"
+          root_cause: "Database connectivity issue"
+          remediation: "Check database health and network connectivity"
+        - name: "memory_exhaustion"
+          pattern: "out of memory|OOM"
+          severity: "critical"
+          root_cause: "Memory resource exhaustion"
+          remediation: "Increase memory limits or optimize memory usage"
+        - name: "cpu_saturation"
+          pattern: "cpu.*saturation|high.*cpu"
+          severity: "warning"
+          root_cause: "CPU resource saturation"
+          remediation: "Scale horizontally or optimize CPU usage"
+      
+      # Network failure patterns
+      network_failure:
+        - name: "timeout_errors"
+          pattern: "timeout|connection.*timeout"
+          severity: "warning"
+          root_cause: "Network timeout issues"
+          remediation: "Check network latency and timeout configurations"
+        - name: "dns_resolution_failure"
+          pattern: "dns.*resolution.*failed"
+          severity: "critical"
+          root_cause: "DNS resolution failure"
+          remediation: "Check DNS configuration and connectivity"
+      
+      # Application failure patterns
+      application_failure:
+        - name: "null_pointer_exception"
+          pattern: "null.*pointer.*exception"
+          severity: "critical"
+          root_cause: "Application logic error"
+          remediation: "Review application code for null checks"
+        - name: "configuration_error"
+          pattern: "configuration.*error|config.*invalid"
+          severity: "warning"
+          root_cause: "Configuration misconfiguration"
+          remediation: "Validate and update configuration"
+    
+    # RCA output configuration
+    output:
+      # Notification channels
+      notifications:
+        - type: "slack"
+          webhook_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+          channel: "#incidents"
+          template: "rca_notification_template"
+        - type: "email"
+          smtp_server: "smtp.254carbon.com"
+          recipients: ["sre@254carbon.com", "devops@254carbon.com"]
+          template: "rca_email_template"
+      
+      # Storage for RCA results
+      storage:
+        type: "database"
+        connection_string: "postgresql://rca:password@postgres.observability.svc.cluster.local:5432/rca"
+        retention_days: 90
+      
+      # API endpoints
+      api:
+        enabled: true
+        port: 8080
+        auth_required: true
+        rate_limit: 100  # requests per minute
+    
+    # RCA performance configuration
+    performance:
+      max_concurrent_analyses: 10
+      analysis_timeout: "5m"
+      cache_ttl: "1h"
+      batch_size: 100
+    
+    # RCA learning configuration
+    learning:
+      enabled: true
+      feedback_mechanism: true
+      model_retraining_interval: "24h"
+      confidence_threshold: 0.8

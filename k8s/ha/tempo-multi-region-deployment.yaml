@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo-multi-region
+  namespace: observability
+  labels:
+    app: tempo-multi-region
+    component: tempo
+    region: us-west-2
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: tempo-multi-region
+  template:
+    metadata:
+      labels:
+        app: tempo-multi-region
+        component: tempo
+        region: us-west-2
+    spec:
+      serviceAccountName: tempo
+      containers:
+        - name: tempo
+          image: grafana/tempo:2.3.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - -config.file=/etc/tempo/tempo.yaml
+          ports:
+            - containerPort: 3200
+              name: http
+            - containerPort: 9095
+              name: grpc
+            - containerPort: 7946
+              name: memberlist
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: tempo-s3-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: tempo-s3-credentials
+                  key: secret-access-key
+            - name: REGION
+              value: "us-west-2"
+            - name: CLUSTER
+              value: "primary"
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/tempo
+            - name: storage-volume
+              mountPath: /tmp/tempo
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 3200
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3200
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+      volumes:
+        - name: config-volume
+          configMap:
+            name: tempo-multi-region-config
+        - name: storage-volume
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - tempo-multi-region
+                topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo-multi-region
+  namespace: observability
+  labels:
+    app: tempo-multi-region
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3200
+      targetPort: 3200
+      name: http
+    - port: 9095
+      targetPort: 9095
+      name: grpc
+  selector:
+    app: tempo-multi-region
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tempo-s3-credentials
+  namespace: observability
+type: Opaque
+data:
+  access-key-id: <base64-encoded-access-key>
+  secret-access-key: <base64-encoded-secret-key>

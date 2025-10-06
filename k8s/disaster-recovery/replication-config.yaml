@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: replication-config
+  namespace: observability
+data:
+  replication.yaml: |
+    # Cross-Region Replication Configuration
+    # Defines replication strategies for disaster recovery
+
+    replication:
+      enabled: true
+      mode: async
+      lag_threshold_seconds: 300
+      compression: true
+      encryption: true
+
+    regions:
+      primary:
+        name: us-west-2
+        cluster: primary-cluster
+        endpoints:
+          prometheus: http://prometheus-federation.observability.svc.cluster.local:9090
+          tempo: http://tempo-multi-region.observability.svc.cluster.local:3200
+          loki: http://loki.observability.svc.cluster.local:3100
+          grafana: http://grafana.observability.svc.cluster.local:3000
+
+      secondary:
+        name: us-east-1
+        cluster: secondary-cluster
+        endpoints:
+          prometheus: http://prometheus-us-east-1.observability.svc.cluster.local:9090
+          tempo: http://tempo-us-east-1.observability.svc.cluster.local:3200
+          loki: http://loki-us-east-1.observability.svc.cluster.local:3100
+          grafana: http://grafana-us-east-1.observability.svc.cluster.local:3000
+
+      tertiary:
+        name: eu-west-1
+        cluster: tertiary-cluster
+        endpoints:
+          prometheus: http://prometheus-eu-west-1.observability.svc.cluster.local:9090
+          tempo: http://tempo-eu-west-1.observability.svc.cluster.local:3200
+          loki: http://loki-eu-west-1.observability.svc.cluster.local:3100
+          grafana: http://grafana-eu-west-1.observability.svc.cluster.local:3000
+
+    components:
+      prometheus:
+        replication_enabled: true
+        replication_interval: 5m
+        retention_sync: true
+        rule_sync: true
+
+      tempo:
+        replication_enabled: true
+        replication_interval: 1m
+        trace_replication: true
+        metadata_replication: true
+
+      loki:
+        replication_enabled: true
+        replication_interval: 2m
+        log_replication: true
+        index_replication: true
+
+      grafana:
+        replication_enabled: true
+        replication_interval: 10m
+        dashboard_sync: true
+        datasource_sync: true
+        user_sync: false  # Users handled separately
+
+    failover:
+      enabled: true
+      detection_interval: 30s
+      health_check_timeout: 10s
+      auto_failover: false  # Manual failover for safety
+      notification_channels:
+        - slack
+        - email
+        - pagerduty
+
+    monitoring:
+      replication_lag_alerts: true
+      failover_readiness_checks: true
+      data_integrity_checks: true
+      performance_monitoring: true

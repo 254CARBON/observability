@@ -1,0 +1,45 @@
+apiVersion: notification.toolkit.fluxcd.io/v1beta1
+kind: AlertProvider
+metadata:
+  name: slack-alerts
+  namespace: flux-system
+spec:
+  type: slack
+  channel: "#observability-alerts"
+  secretRef:
+    name: slack-webhook
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: slack-webhook
+  namespace: flux-system
+type: Opaque
+data:
+  # Base64 encoded Slack webhook URL
+  address: <base64-encoded-webhook-url>
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta1
+kind: Alert
+metadata:
+  name: observability-alerts
+  namespace: flux-system
+spec:
+  providerRef:
+    name: slack-alerts
+  eventSeverity: info
+  eventSources:
+  - kind: Kustomization
+    name: observability-platform
+  - kind: GitRepository
+    name: observability-config
+  summary: "Observability platform deployment status"
+  description: |
+    {{range $key, $value := .Metadata}}
+    {{$key}}: {{$value}}
+    {{end}}
+    
+    {{range .Alerts}}
+    Alert: {{.Name}}
+    Message: {{.Message}}
+    {{end}}

@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-multi-region-config
+  namespace: observability
+data:
+  tempo.yaml: |
+    # Tempo Multi-Region Configuration for High Availability
+    # This configuration enables Tempo to work across multiple regions
+
+    server:
+      http_listen_port: 3200
+      grpc_listen_port: 9095
+      log_level: info
+      log_format: json
+
+    distributor:
+      receivers:
+        jaeger:
+          protocols:
+            thrift_http:
+            grpc:
+        zipkin:
+        otlp:
+          protocols:
+            grpc:
+            http:
+        opencensus:
+      ring:
+        kvstore:
+          store: memberlist
+        replication_factor: 3
+
+    ingester:
+      max_block_duration: 5m
+      max_block_bytes: 100_000_000
+      lifecycler:
+        ring:
+          kvstore:
+            store: memberlist
+          replication_factor: 3
+        join_after: 30s
+        min_ready_duration: 1m
+        finalize_shutdown_duration: 30s
+
+    querier:
+      frontend_worker:
+        frontend_address: tempo-query-frontend:9095
+
+    query_frontend:
+      search:
+        duration_slo: 5s
+        throughput_bytes_slo: 1.073741824e+09
+
+    compactor:
+      compaction:
+        block_retention: 1h
+        compacted_block_retention: 10m
+
+    storage:
+      trace:
+        backend: s3
+        s3:
+          bucket: tempo-traces-us-west-2
+          region: us-west-2
+          endpoint: s3.us-west-2.amazonaws.com
+          access_key: ${AWS_ACCESS_KEY_ID}
+          secret_key: ${AWS_SECRET_ACCESS_KEY}
+          insecure: false
+          v2_signing: false
+        pool:
+          max_workers: 100
+          queue_depth: 10000
+
+    memberlist:
+      join_members:
+        - tempo-memberlist.observability.svc.cluster.local:7946
+        - tempo-memberlist-us-east-1.observability.svc.cluster.local:7946
+        - tempo-memberlist-eu-west-1.observability.svc.cluster.local:7946
+
+    overrides:
+      per_tenant_override_config: /etc/tempo/overrides.yaml
+
+    metrics_generator:
+      registry:
+        external_labels:
+          region: us-west-2
+          cluster: primary
+      storage:
+        path: /tmp/tempo/generator/wal
+        remote_write:
+          - url: http://prometheus-federation.observability.svc.cluster.local:9090/api/v1/write
+            send_exemplars: true

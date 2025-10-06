@@ -1,0 +1,428 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ml-alerting-config
+  namespace: observability
+data:
+  config.yaml: |
+    # ML-Powered Alerting Configuration
+    
+    # Data sources
+    data_sources:
+      prometheus:
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090"
+        query_timeout: "30s"
+        retention_period: "90d"
+        
+      alertmanager:
+        endpoint: "http://alertmanager.observability.svc.cluster.local:9093"
+        api_timeout: "10s"
+        
+      tempo:
+        endpoint: "http://tempo.observability.svc.cluster.local:3200"
+        query_timeout: "30s"
+        
+      loki:
+        endpoint: "http://loki.observability.svc.cluster.local:3100"
+        query_timeout: "30s"
+        
+    # ML models configuration
+    models:
+      # Alert prediction model
+      alert_prediction:
+        enabled: true
+        model_type: "random_forest"
+        training_window: "30d"
+        prediction_window: "1h"
+        features:
+          - "cpu_utilization"
+          - "memory_utilization"
+          - "disk_utilization"
+          - "network_utilization"
+          - "error_rate"
+          - "latency"
+          - "request_rate"
+          - "service_health"
+        hyperparameters:
+          n_estimators: 100
+          max_depth: 10
+          min_samples_split: 5
+          min_samples_leaf: 2
+          random_state: 42
+        validation_split: 0.2
+        cross_validation_folds: 5
+        
+      # Alert severity prediction model
+      severity_prediction:
+        enabled: true
+        model_type: "gradient_boosting"
+        training_window: "60d"
+        prediction_window: "30m"
+        features:
+          - "alert_name"
+          - "service_name"
+          - "error_rate"
+          - "latency"
+          - "resource_utilization"
+          - "historical_severity"
+          - "time_of_day"
+          - "day_of_week"
+        hyperparameters:
+          n_estimators: 200
+          learning_rate: 0.1
+          max_depth: 6
+          subsample: 0.8
+          random_state: 42
+        validation_split: 0.2
+        cross_validation_folds: 5
+        
+      # Alert impact prediction model
+      impact_prediction:
+        enabled: true
+        model_type: "neural_network"
+        training_window: "90d"
+        prediction_window: "2h"
+        features:
+          - "service_dependencies"
+          - "user_count"
+          - "business_impact"
+          - "resource_criticality"
+          - "historical_impact"
+          - "time_to_resolution"
+          - "escalation_level"
+        hyperparameters:
+          hidden_layers: [64, 32, 16]
+          activation: "relu"
+          optimizer: "adam"
+          learning_rate: 0.001
+          batch_size: 32
+          epochs: 100
+          early_stopping: true
+        validation_split: 0.2
+        cross_validation_folds: 3
+        
+      # Alert resolution time prediction model
+      resolution_prediction:
+        enabled: true
+        model_type: "linear_regression"
+        training_window: "60d"
+        prediction_window: "4h"
+        features:
+          - "alert_severity"
+          - "service_complexity"
+          - "team_expertise"
+          - "historical_resolution_time"
+          - "time_of_day"
+          - "day_of_week"
+          - "escalation_level"
+          - "resource_availability"
+        hyperparameters:
+          fit_intercept: true
+          normalize: false
+          copy_X: true
+          n_jobs: -1
+        validation_split: 0.2
+        cross_validation_folds: 5
+        
+      # Anomaly detection model
+      anomaly_detection:
+        enabled: true
+        model_type: "isolation_forest"
+        training_window: "14d"
+        prediction_window: "15m"
+        features:
+          - "metric_values"
+          - "metric_trends"
+          - "service_behavior"
+          - "resource_patterns"
+          - "error_patterns"
+        hyperparameters:
+          contamination: 0.1
+          max_samples: "auto"
+          max_features: 1.0
+          bootstrap: false
+          random_state: 42
+        validation_split: 0.2
+        cross_validation_folds: 3
+        
+    # Feature engineering
+    feature_engineering:
+      # Temporal features
+      temporal:
+        enabled: true
+        features:
+          - "hour_of_day"
+          - "day_of_week"
+          - "month_of_year"
+          - "is_weekend"
+          - "is_holiday"
+          - "time_since_last_alert"
+          - "alert_frequency"
+          - "seasonal_pattern"
+          
+      # Service features
+      service:
+        enabled: true
+        features:
+          - "service_name"
+          - "service_version"
+          - "service_dependencies"
+          - "service_health_score"
+          - "service_criticality"
+          - "service_team"
+          - "service_environment"
+          - "service_region"
+          
+      # Resource features
+      resource:
+        enabled: true
+        features:
+          - "cpu_utilization"
+          - "memory_utilization"
+          - "disk_utilization"
+          - "network_utilization"
+          - "resource_trends"
+          - "resource_capacity"
+          - "resource_efficiency"
+          - "resource_cost"
+          
+      # Error features
+      error:
+        enabled: true
+        features:
+          - "error_rate"
+          - "error_type"
+          - "error_severity"
+          - "error_frequency"
+          - "error_patterns"
+          - "error_correlation"
+          - "error_impact"
+          - "error_resolution_time"
+          
+      # Performance features
+      performance:
+        enabled: true
+        features:
+          - "latency"
+          - "throughput"
+          - "response_time"
+          - "queue_length"
+          - "cache_hit_rate"
+          - "database_performance"
+          - "api_performance"
+          - "user_experience"
+          
+    # Model training
+    training:
+      # Training schedule
+      schedule:
+        enabled: true
+        frequency: "daily"
+        time: "02:00"
+        timezone: "UTC"
+        
+      # Training parameters
+      parameters:
+        batch_size: 1000
+        learning_rate: 0.01
+        max_epochs: 100
+        early_stopping: true
+        patience: 10
+        min_delta: 0.001
+        
+      # Model validation
+      validation:
+        enabled: true
+        method: "time_series_split"
+        test_size: 0.2
+        cross_validation: true
+        folds: 5
+        
+      # Model evaluation
+      evaluation:
+        enabled: true
+        metrics:
+          - "accuracy"
+          - "precision"
+          - "recall"
+          - "f1_score"
+          - "auc_roc"
+          - "mae"
+          - "rmse"
+          - "mape"
+        thresholds:
+          accuracy: 0.8
+          precision: 0.7
+          recall: 0.7
+          f1_score: 0.7
+          auc_roc: 0.8
+          
+    # Model serving
+    serving:
+      # Model endpoints
+      endpoints:
+        alert_prediction: "/api/v1/predict/alert"
+        severity_prediction: "/api/v1/predict/severity"
+        impact_prediction: "/api/v1/predict/impact"
+        resolution_prediction: "/api/v1/predict/resolution"
+        anomaly_detection: "/api/v1/predict/anomaly"
+        
+      # Model versioning
+      versioning:
+        enabled: true
+        strategy: "semantic"
+        auto_deploy: true
+        rollback_threshold: 0.1
+        
+      # Model monitoring
+      monitoring:
+        enabled: true
+        metrics:
+          - "prediction_accuracy"
+          - "prediction_latency"
+          - "model_drift"
+          - "feature_importance"
+          - "prediction_confidence"
+        alerts:
+          - "model_performance_degradation"
+          - "model_drift_detected"
+          - "prediction_accuracy_low"
+          
+    # Predictive alerting
+    predictive_alerting:
+      # Alert prediction
+      alert_prediction:
+        enabled: true
+        confidence_threshold: 0.7
+        prediction_horizon: "1h"
+        update_frequency: "5m"
+        alert_channels:
+          - "slack"
+          - "email"
+          - "pagerduty"
+          
+      # Severity prediction
+      severity_prediction:
+        enabled: true
+        confidence_threshold: 0.8
+        prediction_horizon: "30m"
+        update_frequency: "10m"
+        severity_mapping:
+          critical: 0.9
+          warning: 0.7
+          info: 0.5
+          
+      # Impact prediction
+      impact_prediction:
+        enabled: true
+        confidence_threshold: 0.75
+        prediction_horizon: "2h"
+        update_frequency: "15m"
+        impact_categories:
+          - "user_impact"
+          - "business_impact"
+          - "technical_impact"
+          - "financial_impact"
+          
+      # Resolution time prediction
+      resolution_prediction:
+        enabled: true
+        confidence_threshold: 0.6
+        prediction_horizon: "4h"
+        update_frequency: "30m"
+        resolution_categories:
+          - "immediate"
+          - "urgent"
+          - "normal"
+          - "low_priority"
+          
+      # Anomaly detection
+      anomaly_detection:
+        enabled: true
+        confidence_threshold: 0.8
+        prediction_horizon: "15m"
+        update_frequency: "1m"
+        anomaly_types:
+          - "metric_anomaly"
+          - "pattern_anomaly"
+          - "behavioral_anomaly"
+          - "temporal_anomaly"
+          
+    # Model performance optimization
+    performance:
+      # Query optimization
+      query_optimization:
+        enabled: true
+        max_query_time: "30s"
+        cache_queries: true
+        cache_duration: "5m"
+        
+      # Data processing
+      data_processing:
+        enabled: true
+        batch_size: 1000
+        processing_interval: "1m"
+        parallel_processing: true
+        max_workers: 4
+        
+      # Memory management
+      memory_management:
+        enabled: true
+        max_memory_usage: "2GB"
+        gc_threshold: "80%"
+        cache_size: "1GB"
+        
+      # GPU acceleration
+      gpu_acceleration:
+        enabled: false
+        gpu_memory_limit: "4GB"
+        gpu_utilization_threshold: "80%"
+        
+    # Monitoring and observability
+    monitoring:
+      # Metrics collection
+      metrics:
+        enabled: true
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090"
+        metric_prefix: "ml_alerting_"
+        
+      # Health checks
+      health_checks:
+        enabled: true
+        endpoint: "/health"
+        interval: "30s"
+        timeout: "5s"
+        
+      # Logging
+      logging:
+        enabled: true
+        level: "info"
+        format: "json"
+        output: "stdout"
+        
+    # Security
+    security:
+      # Authentication
+      authentication:
+        enabled: true
+        method: "bearer_token"
+        token_header: "Authorization"
+        
+      # Authorization
+      authorization:
+        enabled: true
+        rbac_enabled: true
+        default_role: "viewer"
+        
+      # Encryption
+      encryption:
+        enabled: true
+        algorithm: "AES-256-GCM"
+        key_rotation: "24h"
+        
+      # Model security
+      model_security:
+        enabled: true
+        model_encryption: true
+        model_signing: true
+        model_validation: true

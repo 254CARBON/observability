@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tenant-manager
+  namespace: observability
+  labels:
+    app: tenant-manager
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tenant-manager
+  template:
+    metadata:
+      labels:
+        app: tenant-manager
+    spec:
+      containers:
+        - name: tenant-manager
+          image: busybox # Placeholder image, replace with actual service image
+          command: ["/bin/sh", "-c", "echo 'Tenant Manager Service running (placeholder)'; sleep 3600"] # Placeholder command
+          ports:
+            - containerPort: 8080 # For exposing API
+            - containerPort: 9090 # For exposing metrics
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/tenant-manager
+          env:
+            - name: TENANT_CONFIG_PATH
+              value: "/etc/tenant-manager/config.yaml"
+            - name: PROMETHEUS_ENDPOINT
+              value: "http://prometheus-server.observability.svc.cluster.local:9090"
+            - name: LOKI_ENDPOINT
+              value: "http://loki.observability.svc.cluster.local:3100"
+            - name: TEMPO_ENDPOINT
+              value: "http://tempo.observability.svc.cluster.local:3200"
+      volumes:
+        - name: config-volume
+          configMap:
+            name: tenant-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tenant-manager
+  namespace: observability
+  labels:
+    app: tenant-manager
+spec:
+  type: ClusterIP
+  selector:
+    app: tenant-manager
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+      name: api
+    - protocol: TCP
+      port: 9090
+      targetPort: 9090
+      name: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tenant-manager-headless
+  namespace: observability
+  labels:
+    app: tenant-manager
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: tenant-manager
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+      name: api

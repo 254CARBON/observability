@@ -1,0 +1,158 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: pyroscope-agent
+  namespace: observability
+  labels:
+    app: pyroscope-agent
+spec:
+  selector:
+    matchLabels:
+      app: pyroscope-agent
+  template:
+    metadata:
+      labels:
+        app: pyroscope-agent
+    spec:
+      serviceAccountName: pyroscope-agent
+      containers:
+        - name: pyroscope-agent
+          image: grafana/pyroscope:1.5.0
+          args:
+            - "agent"
+            - "-config.file=/etc/pyroscope-agent/pyroscope-agent.yaml"
+          env:
+            - name: PYROSCOPE_LOG_LEVEL
+              value: "info"
+            - name: PYROSCOPE_AGENT_ENABLED
+              value: "true"
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 50m
+            limits:
+              memory: 128Mi
+              cpu: 100m
+          volumeMounts:
+            - name: pyroscope-agent-config-volume
+              mountPath: /etc/pyroscope-agent
+            - name: proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: sys
+              mountPath: /host/sys
+              readOnly: true
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+              readOnly: true
+          securityContext:
+            privileged: true
+      volumes:
+        - name: pyroscope-agent-config-volume
+          configMap:
+            name: pyroscope-agent-config
+        - name: proc
+          hostPath:
+            path: /proc
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pyroscope-agent
+  namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pyroscope-agent
+rules:
+- apiGroups: [""]
+  resources:
+  - nodes
+  - nodes/proxy
+  - pods
+  - services
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources:
+  - deployments
+  - daemonsets
+  - replicasets
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pyroscope-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pyroscope-agent
+subjects:
+- kind: ServiceAccount
+  name: pyroscope-agent
+  namespace: observability
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pyroscope-agent-config
+  namespace: observability
+data:
+  pyroscope-agent.yaml: |
+    # Pyroscope Agent Configuration
+    server:
+      http_listen_address: "0.0.0.0"
+      http_listen_port: 4040
+      log_level: "info"
+      
+    # Agent configuration
+    agent:
+      enabled: true
+      sampling_rate: 0.01  # 1% sampling rate
+      upload_interval: "10s"
+      
+    # Profiling targets
+    profiling:
+      cpu:
+        enabled: true
+        sampling_rate: 100  # Hz
+      memory:
+        enabled: true
+        sampling_rate: 10   # Hz
+      goroutines:
+        enabled: true
+        sampling_rate: 1    # Hz
+        
+    # Discovery configuration
+    discovery:
+      kubernetes:
+        enabled: true
+        namespace: "observability"
+        label_selector: "app.kubernetes.io/name"
+        
+    # Target configuration
+    targets:
+      - name: "gateway"
+        labels:
+          service: "gateway"
+          environment: "local"
+        profiling:
+          cpu:
+            enabled: true
+            sampling_rate: 100
+          memory:
+            enabled: true
+            sampling_rate: 10
+            
+    # Integration with Pyroscope server
+    pyroscope:
+      endpoint: "http://pyroscope.observability.svc.cluster.local:4040"
+      auth:
+        enabled: false  # Disable for local dev

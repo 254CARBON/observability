@@ -1,0 +1,180 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: capacity-planning-alerts
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: alert-rules
+    severity: warn
+spec:
+  groups:
+    - name: capacity.planning.alerts
+      rules:
+        # Capacity exhaustion alerts
+        - alert: ALERT_CAPACITY_EXHAUSTION_WARNING
+          expr: |
+            capacity_planning:cpu_exhaustion_hours < 24 OR
+            capacity_planning:memory_exhaustion_hours < 24
+          for: 5m
+          labels:
+            severity: warning
+            component: "capacity_planning"
+          annotations:
+            summary: "Resource capacity exhaustion warning"
+            description: "{{ $labels.pod }} will exhaust {{ $labels.resource }} capacity within 24 hours. Current utilization: {{ $value }}%"
+            
+        - alert: ALERT_CAPACITY_EXHAUSTION_CRITICAL
+          expr: |
+            capacity_planning:cpu_exhaustion_hours < 6 OR
+            capacity_planning:memory_exhaustion_hours < 6
+          for: 2m
+          labels:
+            severity: critical
+            component: "capacity_planning"
+          annotations:
+            summary: "Resource capacity exhaustion critical"
+            description: "{{ $labels.pod }} will exhaust {{ $labels.resource }} capacity within 6 hours. Immediate scaling required."
+            
+        # High growth rate alerts
+        - alert: ALERT_HIGH_GROWTH_RATE
+          expr: |
+            capacity_planning:cpu_growth_rate_per_hour > 10 OR
+            capacity_planning:memory_growth_rate_per_hour > 10
+          for: 10m
+          labels:
+            severity: warning
+            component: "capacity_planning"
+          annotations:
+            summary: "High resource growth rate detected"
+            description: "{{ $labels.pod }} has a high {{ $labels.resource }} growth rate of {{ $value }}% per hour. Monitor closely."
+            
+        # Resource utilization alerts
+        - alert: ALERT_HIGH_CPU_UTILIZATION
+          expr: |
+            capacity_planning:cpu_utilization_percent > 80
+          for: 5m
+          labels:
+            severity: warning
+            component: "capacity_planning"
+          annotations:
+            summary: "High CPU utilization"
+            description: "{{ $labels.pod }} has high CPU utilization of {{ $value }}%. Consider scaling."
+            
+        - alert: ALERT_HIGH_MEMORY_UTILIZATION
+          expr: |
+            capacity_planning:memory_utilization_percent > 80
+          for: 5m
+          labels:
+            severity: warning
+            component: "capacity_planning"
+          annotations:
+            summary: "High memory utilization"
+            description: "{{ $labels.pod }} has high memory utilization of {{ $value }}%. Consider scaling."
+            
+        - alert: ALERT_HIGH_DISK_UTILIZATION
+          expr: |
+            capacity_planning:disk_utilization_percent > 80
+          for: 5m
+          labels:
+            severity: warning
+            component: "capacity_planning"
+          annotations:
+            summary: "High disk utilization"
+            description: "{{ $labels.instance }} has high disk utilization of {{ $value }}%. Consider cleanup or scaling."
+            
+        # Service-specific alerts
+        - alert: ALERT_GATEWAY_CAPACITY_WARNING
+          expr: |
+            capacity_planning:gateway_cpu_utilization > 0.7 OR
+            capacity_planning:gateway_memory_utilization > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            component: "capacity_planning"
+            service: "gateway"
+          annotations:
+            summary: "Gateway service capacity warning"
+            description: "Gateway service has high resource utilization. CPU: {{ $value }}%, Memory: {{ $value }}%"
+            
+        - alert: ALERT_INGESTION_CAPACITY_WARNING
+          expr: |
+            capacity_planning:ingestion_cpu_utilization > 0.7 OR
+            capacity_planning:ingestion_memory_utilization > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            component: "capacity_planning"
+            service: "ingestion"
+          annotations:
+            summary: "Ingestion service capacity warning"
+            description: "Ingestion service has high resource utilization. CPU: {{ $value }}%, Memory: {{ $value }}%"
+            
+        - alert: ALERT_NORMALIZATION_CAPACITY_WARNING
+          expr: |
+            capacity_planning:normalization_cpu_utilization > 0.7 OR
+            capacity_planning:normalization_memory_utilization > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            component: "capacity_planning"
+            service: "normalization"
+          annotations:
+            summary: "Normalization service capacity warning"
+            description: "Normalization service has high resource utilization. CPU: {{ $value }}%, Memory: {{ $value }}%"
+            
+        - alert: ALERT_STREAMING_CAPACITY_WARNING
+          expr: |
+            capacity_planning:streaming_cpu_utilization > 0.7 OR
+            capacity_planning:streaming_memory_utilization > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            component: "capacity_planning"
+            service: "streaming"
+          annotations:
+            summary: "Streaming service capacity warning"
+            description: "Streaming service has high resource utilization. CPU: {{ $value }}%, Memory: {{ $value }}%"
+            
+        # Capacity planning service unavailable
+        - alert: ALERT_CAPACITY_PLANNING_UNAVAILABLE
+          expr: |
+            up{job="capacity-planning"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            component: "capacity_planning"
+          annotations:
+            summary: "Capacity planning service unavailable"
+            description: "Capacity planning service is not responding. Capacity forecasting may be interrupted."
+            
+        # Trend analysis alerts
+        - alert: ALERT_RESOURCE_TREND_ANOMALY
+          expr: |
+            (
+              capacity_planning:cpu_trend_direction == 1 AND
+              capacity_planning:cpu_growth_rate_per_hour > 5
+            ) OR (
+              capacity_planning:memory_trend_direction == 1 AND
+              capacity_planning:memory_growth_rate_per_hour > 5
+            )
+          for: 15m
+          labels:
+            severity: warning
+            component: "capacity_planning"
+          annotations:
+            summary: "Resource trend anomaly detected"
+            description: "{{ $labels.pod }} shows anomalous growth pattern in {{ $labels.resource }} utilization. Investigate for potential issues."
+            
+        # Cost optimization alerts
+        - alert: ALERT_UNDERUTILIZED_RESOURCES
+          expr: |
+            capacity_planning:cpu_utilization_percent < 30 AND
+            capacity_planning:memory_utilization_percent < 30
+          for: 1h
+          labels:
+            severity: info
+            component: "capacity_planning"
+          annotations:
+            summary: "Underutilized resources detected"
+            description: "{{ $labels.pod }} has low resource utilization (CPU: {{ $value }}%, Memory: {{ $value }}%). Consider right-sizing for cost optimization."

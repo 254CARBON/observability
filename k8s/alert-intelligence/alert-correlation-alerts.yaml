@@ -1,0 +1,378 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: alert-intelligence-alerts
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: alert-rules
+    severity: page
+spec:
+  groups:
+    - name: alert.intelligence.alerts
+      rules:
+        # Alert intelligence health alerts
+        - alert: AlertIntelligenceHealthScoreLow
+          expr: alert_intelligence_health_score < alert_intelligence_health_threshold
+          for: 5m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence health score is low"
+            description: "Alert intelligence health score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: AlertIntelligenceHealthScoreCritical
+          expr: alert_intelligence_health_score < 0.5
+          for: 2m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence health score is critical"
+            description: "Alert intelligence health score is {{ $value | printf \"%.2f\" }}, indicating severe issues"
+            
+        # Alert intelligence performance alerts
+        - alert: AlertIntelligencePerformanceScoreLow
+          expr: alert_intelligence_performance_score < alert_intelligence_performance_threshold
+          for: 5m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence performance score is low"
+            description: "Alert intelligence performance score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: AlertIntelligenceHighProcessingDuration
+          expr: alert_intelligence_processing_duration:p95 > 5.0
+          for: 5m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence high processing duration"
+            description: "Alert intelligence P95 processing duration is {{ $value }}s, above threshold of 5s"
+            
+        - alert: AlertIntelligenceExtremeProcessingDuration
+          expr: alert_intelligence_processing_duration:p99 > 10.0
+          for: 2m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence extreme processing duration"
+            description: "Alert intelligence P99 processing duration is {{ $value }}s, above threshold of 10s"
+            
+        # Alert intelligence error alerts
+        - alert: AlertIntelligenceHighErrorRate
+          expr: alert_intelligence_processing_errors:rate5m > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence high error rate"
+            description: "Alert intelligence error rate is {{ $value | humanizePercentage }}, above threshold of 10%"
+            
+        - alert: AlertIntelligenceExtremeErrorRate
+          expr: alert_intelligence_processing_errors:rate5m > 0.5
+          for: 2m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence extreme error rate"
+            description: "Alert intelligence error rate is {{ $value | humanizePercentage }}, above threshold of 50%"
+            
+        # Alert intelligence efficiency alerts
+        - alert: AlertIntelligenceEfficiencyScoreLow
+          expr: alert_intelligence_efficiency_score < alert_intelligence_efficiency_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence efficiency score is low"
+            description: "Alert intelligence efficiency score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: AlertIntelligenceLowCorrelationScore
+          expr: alert_intelligence_correlation_score:avg < 0.3
+          for: 10m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence low correlation score"
+            description: "Alert intelligence average correlation score is {{ $value | printf \"%.2f\" }}, below threshold of 0.3"
+            
+        - alert: AlertIntelligenceLowDeduplicationRate
+          expr: alert_intelligence_deduplication_rate:avg < 0.2
+          for: 10m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence low deduplication rate"
+            description: "Alert intelligence average deduplication rate is {{ $value | humanizePercentage }}, below threshold of 20%"
+            
+        # Alert intelligence capacity alerts
+        - alert: AlertIntelligenceCapacityUtilizationHigh
+          expr: alert_intelligence_capacity_utilization > alert_intelligence_capacity_threshold
+          for: 5m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence capacity utilization is high"
+            description: "Alert intelligence capacity utilization is {{ $value | humanizePercentage }}, above threshold of {{ $labels.threshold }}"
+            
+        - alert: AlertIntelligenceCapacityUtilizationCritical
+          expr: alert_intelligence_capacity_utilization > 0.95
+          for: 2m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence capacity utilization is critical"
+            description: "Alert intelligence capacity utilization is {{ $value | humanizePercentage }}, above critical threshold of 95%"
+            
+        # Alert intelligence quality alerts
+        - alert: AlertIntelligenceQualityScoreLow
+          expr: alert_intelligence_quality_score < alert_intelligence_quality_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence quality score is low"
+            description: "Alert intelligence quality score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: AlertIntelligenceQualityScoreCritical
+          expr: alert_intelligence_quality_score < 0.5
+          for: 5m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence quality score is critical"
+            description: "Alert intelligence quality score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.5"
+            
+        # Alert intelligence reliability alerts
+        - alert: AlertIntelligenceReliabilityScoreLow
+          expr: alert_intelligence_reliability_score < alert_intelligence_reliability_threshold
+          for: 5m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence reliability score is low"
+            description: "Alert intelligence reliability score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: AlertIntelligenceReliabilityScoreCritical
+          expr: alert_intelligence_reliability_score < 0.7
+          for: 2m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence reliability score is critical"
+            description: "Alert intelligence reliability score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.7"
+            
+        # Alert intelligence scalability alerts
+        - alert: AlertIntelligenceScalabilityScoreLow
+          expr: alert_intelligence_scalability_score < alert_intelligence_scalability_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence scalability score is low"
+            description: "Alert intelligence scalability score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: AlertIntelligenceScalabilityScoreCritical
+          expr: alert_intelligence_scalability_score < 0.5
+          for: 5m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence scalability score is critical"
+            description: "Alert intelligence scalability score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.5"
+            
+        # Alert intelligence accuracy alerts
+        - alert: AlertIntelligenceAccuracyScoreLow
+          expr: alert_intelligence_accuracy_score < alert_intelligence_accuracy_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence accuracy score is low"
+            description: "Alert intelligence accuracy score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: AlertIntelligenceAccuracyScoreCritical
+          expr: alert_intelligence_accuracy_score < 0.6
+          for: 5m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence accuracy score is critical"
+            description: "Alert intelligence accuracy score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.6"
+            
+        # Alert intelligence precision alerts
+        - alert: AlertIntelligencePrecisionScoreLow
+          expr: alert_intelligence_precision_score < alert_intelligence_precision_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence precision score is low"
+            description: "Alert intelligence precision score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: AlertIntelligencePrecisionScoreCritical
+          expr: alert_intelligence_precision_score < 0.7
+          for: 5m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence precision score is critical"
+            description: "Alert intelligence precision score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.7"
+            
+        # Alert intelligence recall alerts
+        - alert: AlertIntelligenceRecallScoreLow
+          expr: alert_intelligence_recall_score < alert_intelligence_recall_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence recall score is low"
+            description: "Alert intelligence recall score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: AlertIntelligenceRecallScoreCritical
+          expr: alert_intelligence_recall_score < 0.7
+          for: 5m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence recall score is critical"
+            description: "Alert intelligence recall score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.7"
+            
+        # Alert intelligence F1 score alerts
+        - alert: AlertIntelligenceF1ScoreLow
+          expr: alert_intelligence_f1_score < alert_intelligence_f1_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence F1 score is low"
+            description: "Alert intelligence F1 score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: AlertIntelligenceF1ScoreCritical
+          expr: alert_intelligence_f1_score < 0.6
+          for: 5m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence F1 score is critical"
+            description: "Alert intelligence F1 score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.6"
+            
+        # Alert intelligence service health alerts
+        - alert: AlertIntelligenceServiceDown
+          expr: up{job="alert-correlation"} == 0
+          for: 1m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence service is down"
+            description: "Alert intelligence service has been down for more than 1 minute"
+            
+        - alert: AlertIntelligenceServiceHighLatency
+          expr: alert_intelligence_processing_duration:avg > 10.0
+          for: 5m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence service high latency"
+            description: "Alert intelligence service average processing duration is {{ $value }}s, above threshold of 10s"
+            
+        - alert: AlertIntelligenceServiceHighErrorRate
+          expr: rate(alert_intelligence_processing_errors_total[5m]) > 0.2
+          for: 5m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence service high error rate"
+            description: "Alert intelligence service error rate is {{ $value | humanizePercentage }}, above threshold of 20%"
+            
+        # Alert intelligence data quality alerts
+        - alert: AlertIntelligenceDataStale
+          expr: time() - alert_intelligence_correlation_score:avg > 300
+          for: 5m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence data is stale"
+            description: "Alert intelligence data is {{ $value }}s old, above threshold of 5 minutes"
+            
+        - alert: AlertIntelligenceDataMissing
+          expr: absent(alert_intelligence_correlation_score:avg)
+          for: 5m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence data is missing"
+            description: "Alert intelligence data has been missing for more than 5 minutes"
+            
+        # Alert intelligence model performance alerts
+        - alert: AlertIntelligenceModelPerformanceDegraded
+          expr: alert_intelligence_score:avg < 0.5
+          for: 15m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence model performance degraded"
+            description: "Alert intelligence model performance score is {{ $value | printf \"%.2f\" }}, below threshold of 0.5"
+            
+        - alert: AlertIntelligenceModelPerformanceCritical
+          expr: alert_intelligence_score:avg < 0.3
+          for: 5m
+          labels:
+            severity: page
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence model performance is critical"
+            description: "Alert intelligence model performance score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.3"
+            
+        # Alert intelligence resource utilization alerts
+        - alert: AlertIntelligenceHighMemoryUsage
+          expr: process_resident_memory_bytes{job="alert-correlation"} > 1000000000
+          for: 5m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence high memory usage"
+            description: "Alert intelligence memory usage is {{ $value | humanizeBytes }}, above threshold of 1GB"
+            
+        - alert: AlertIntelligenceHighCPUUsage
+          expr: rate(process_cpu_seconds_total{job="alert-correlation"}[5m]) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            category: alert-intelligence
+          annotations:
+            summary: "Alert intelligence high CPU usage"
+            description: "Alert intelligence CPU usage is {{ $value | humanizePercentage }}, above threshold of 80%"

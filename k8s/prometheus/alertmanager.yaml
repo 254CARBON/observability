@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: observability
+# Alertmanager routing configuration. Webhooks here represent placeholders for
+# local testing; integrate with email/Slack/PagerDuty in production.
+data:
+  alertmanager.yml: |
+    global:
+      smtp_smarthost: 'localhost:587'
+      smtp_from: 'alerts@254carbon.local'
+    
+    # Alert routing configuration
+    route:
+      group_by: ['alertname', 'service']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 1h
+      receiver: 'web.hook'
+      routes:
+      # Critical alerts - immediate notification
+      - match:
+          severity: critical
+        receiver: 'critical-alerts'
+        group_wait: 5s
+        repeat_interval: 5m
+    
+      # Gateway alerts
+      - match:
+          service: gateway
+        receiver: 'gateway-alerts'
+        group_wait: 30s
+        repeat_interval: 30m
+    
+      # Data pipeline alerts
+      - match:
+          service: ingestion
+        receiver: 'pipeline-alerts'
+        group_wait: 1m
+        repeat_interval: 1h
+    
+      # ML service alerts
+      - match:
+          service: ml
+        receiver: 'ml-alerts'
+        group_wait: 1m
+        repeat_interval: 1h
+    
+    # Alert receivers
+    receivers:
+    - name: 'web.hook'
+      webhook_configs:
+      - url: 'http://localhost:5001/'
+    
+    - name: 'critical-alerts'
+      webhook_configs:
+      - url: 'http://localhost:5001/critical'
+        send_resolved: true
+    
+    - name: 'gateway-alerts'
+      webhook_configs:
+      - url: 'http://localhost:5001/gateway'
+        send_resolved: true
+    
+    - name: 'pipeline-alerts'
+      webhook_configs:
+      - url: 'http://localhost:5001/pipeline'
+        send_resolved: true
+    
+    - name: 'ml-alerts'
+      webhook_configs:
+      - url: 'http://localhost:5001/ml'
+        send_resolved: true
+    
+    # Inhibit rules to prevent alert storms
+    inhibit_rules:
+    - source_match:
+        severity: 'critical'
+      target_match:
+        severity: 'warning'
+      equal: ['alertname', 'service']

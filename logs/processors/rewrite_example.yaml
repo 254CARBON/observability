@@ -1,0 +1,122 @@
+# Example log processing configuration for OpenTelemetry Collector
+# This shows how to process and rewrite logs before sending to Loki
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Add resource attributes
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: "local"
+        action: upsert
+      - key: service.version
+        from_attribute: version
+        action: upsert
+  
+  # Parse structured JSON logs
+  logstransform:
+    operators:
+      # Parse JSON log format
+      - type: json_parser
+        id: parse_json
+        parse_from: body
+        output: parsed_log
+      
+      # Extract timestamp
+      - type: time_parser
+        id: parse_timestamp
+        parse_from: parsed_log.ts
+        layout: '2006-01-02T15:04:05.000Z'
+        output: timestamp
+      
+      # Extract log level
+      - type: move
+        id: move_level
+        from: parsed_log.level
+        to: severity
+  
+  # Add trace correlation
+  attributes:
+    actions:
+      # Add trace_id if present
+      - key: trace_id
+        from_attribute: trace_id
+        action: insert
+      # Add span_id if present
+      - key: span_id
+        from_attribute: span_id
+        action: insert
+      # Add request_id if present
+      - key: request_id
+        from_attribute: request_id
+        action: insert
+      # Add tenant_id if present
+      - key: tenant_id
+        from_attribute: tenant_id
+        action: insert
+      # Add service name
+      - key: service
+        from_attribute: service.name
+        action: insert
+      # Add service version
+      - key: version
+        from_attribute: service.version
+        action: insert
+      # Add environment
+      - key: environment
+        from_attribute: deployment.environment
+        action: insert
+  
+  # Filter sensitive data
+  filter:
+    logs:
+      exclude:
+        match_type: regexp
+        record_attributes:
+          - key: message
+            value: ".*password.*|.*token.*|.*secret.*|.*key.*"
+  
+  # Batch processor for efficiency
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+exporters:
+  # Loki exporter
+  loki:
+    endpoint: http://loki:3100/loki/api/v1/push
+    labels:
+      attributes:
+        service: "service"
+        version: "version"
+        environment: "environment"
+        tenant_id: "tenant_id"
+        trace_id: "trace_id"
+        span_id: "span_id"
+        request_id: "request_id"
+      resource:
+        service.name: "service"
+        service.version: "version"
+        deployment.environment: "environment"
+    tenant_id: "default"
+  
+  # Logging exporter for debugging
+  logging:
+    loglevel: info
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [resource, logstransform, attributes, filter, batch]
+      exporters: [loki, logging]

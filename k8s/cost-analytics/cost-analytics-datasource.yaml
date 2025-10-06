@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource-cost-analytics
+  namespace: observability
+data:
+  cost-analytics-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Cost Analytics
+        type: prometheus
+        url: http://cost-analytics.observability.svc.cluster.local:9090
+        access: proxy
+        editable: true
+        uid: cost-analytics
+        jsonData:
+          # Cost analytics specific configuration
+          queryTimeout: "30s"
+          timeInterval: "1m"
+          # Custom metrics prefix
+          metricPrefix: "cost_analytics_"
+          # Enable cost-specific features
+          enableCostAnalysis: true
+          enableBudgetTracking: true
+          enableOptimizationRecommendations: true

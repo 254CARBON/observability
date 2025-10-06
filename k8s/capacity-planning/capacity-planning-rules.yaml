@@ -1,0 +1,146 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: capacity-planning-rules
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: recording-rules
+spec:
+  groups:
+    - name: capacity.planning.rules
+      rules:
+        # Resource utilization metrics
+        - record: capacity_planning:cpu_utilization_percent
+          expr: |
+            avg(rate(container_cpu_usage_seconds_total[5m])) by (pod) * 100
+          labels:
+            component: "capacity_planning"
+            
+        - record: capacity_planning:memory_utilization_percent
+          expr: |
+            avg(container_memory_usage_bytes / container_spec_memory_limit_bytes) by (pod) * 100
+          labels:
+            component: "capacity_planning"
+            
+        - record: capacity_planning:disk_utilization_percent
+          expr: |
+            avg(node_filesystem_usage) by (instance) * 100
+          labels:
+            component: "capacity_planning"
+            
+        - record: capacity_planning:network_utilization_bytes
+          expr: |
+            avg(rate(container_network_receive_bytes_total[5m])) by (pod)
+          labels:
+            component: "capacity_planning"
+            
+        # Growth rate metrics
+        - record: capacity_planning:cpu_growth_rate_per_hour
+          expr: |
+            (
+              avg(rate(container_cpu_usage_seconds_total[5m])) by (pod) -
+              avg(rate(container_cpu_usage_seconds_total[5m]) offset 1h) by (pod)
+            ) / avg(rate(container_cpu_usage_seconds_total[5m]) offset 1h) by (pod) * 100
+          labels:
+            component: "capacity_planning"
+            
+        - record: capacity_planning:memory_growth_rate_per_hour
+          expr: |
+            (
+              avg(container_memory_usage_bytes / container_spec_memory_limit_bytes) by (pod) -
+              avg(container_memory_usage_bytes / container_spec_memory_limit_bytes offset 1h) by (pod)
+            ) / avg(container_memory_usage_bytes / container_spec_memory_limit_bytes offset 1h) by (pod) * 100
+          labels:
+            component: "capacity_planning"
+            
+        # Trend analysis metrics
+        - record: capacity_planning:cpu_trend_direction
+          expr: |
+            (
+              avg(rate(container_cpu_usage_seconds_total[5m])) by (pod) -
+              avg(rate(container_cpu_usage_seconds_total[5m]) offset 1h) by (pod)
+            ) > 0
+          labels:
+            component: "capacity_planning"
+            
+        - record: capacity_planning:memory_trend_direction
+          expr: |
+            (
+              avg(container_memory_usage_bytes / container_spec_memory_limit_bytes) by (pod) -
+              avg(container_memory_usage_bytes / container_spec_memory_limit_bytes offset 1h) by (pod)
+            ) > 0
+          labels:
+            component: "capacity_planning"
+            
+        # Capacity exhaustion metrics
+        - record: capacity_planning:cpu_exhaustion_hours
+          expr: |
+            (1 - avg(rate(container_cpu_usage_seconds_total[5m])) by (pod)) / 
+            max(capacity_planning:cpu_growth_rate_per_hour, 0.001) / 100
+          labels:
+            component: "capacity_planning"
+            
+        - record: capacity_planning:memory_exhaustion_hours
+          expr: |
+            (1 - avg(container_memory_usage_bytes / container_spec_memory_limit_bytes) by (pod)) / 
+            max(capacity_planning:memory_growth_rate_per_hour, 0.001) / 100
+          labels:
+            component: "capacity_planning"
+            
+        # Service-specific metrics
+        - record: capacity_planning:gateway_cpu_utilization
+          expr: |
+            avg(rate(container_cpu_usage_seconds_total{pod=~"gateway.*"}[5m]))
+          labels:
+            component: "capacity_planning"
+            service: "gateway"
+            
+        - record: capacity_planning:gateway_memory_utilization
+          expr: |
+            avg(container_memory_usage_bytes{pod=~"gateway.*"} / container_spec_memory_limit_bytes{pod=~"gateway.*"})
+          labels:
+            component: "capacity_planning"
+            service: "gateway"
+            
+        - record: capacity_planning:ingestion_cpu_utilization
+          expr: |
+            avg(rate(container_cpu_usage_seconds_total{pod=~"ingestion.*"}[5m]))
+          labels:
+            component: "capacity_planning"
+            service: "ingestion"
+            
+        - record: capacity_planning:ingestion_memory_utilization
+          expr: |
+            avg(container_memory_usage_bytes{pod=~"ingestion.*"} / container_spec_memory_limit_bytes{pod=~"ingestion.*"})
+          labels:
+            component: "capacity_planning"
+            service: "ingestion"
+            
+        - record: capacity_planning:normalization_cpu_utilization
+          expr: |
+            avg(rate(container_cpu_usage_seconds_total{pod=~"normalization.*"}[5m]))
+          labels:
+            component: "capacity_planning"
+            service: "normalization"
+            
+        - record: capacity_planning:normalization_memory_utilization
+          expr: |
+            avg(container_memory_usage_bytes{pod=~"normalization.*"} / container_spec_memory_limit_bytes{pod=~"normalization.*"})
+          labels:
+            component: "capacity_planning"
+            service: "normalization"
+            
+        - record: capacity_planning:streaming_cpu_utilization
+          expr: |
+            avg(rate(container_cpu_usage_seconds_total{pod=~"streaming.*"}[5m]))
+          labels:
+            component: "capacity_planning"
+            service: "streaming"
+            
+        - record: capacity_planning:streaming_memory_utilization
+          expr: |
+            avg(container_memory_usage_bytes{pod=~"streaming.*"} / container_spec_memory_limit_bytes{pod=~"streaming.*"})
+          labels:
+            component: "capacity_planning"
+            service: "streaming"

@@ -1,0 +1,185 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: security-recording-rules
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: recording-rules
+spec:
+  groups:
+    - name: security.rules
+      rules:
+        # Authentication metrics
+        - record: auth_requests_total:rate5m
+          expr: sum by (method, status) (rate(auth_requests_total[5m]))
+          labels:
+            component: security
+        - record: auth_failures_total:rate5m
+          expr: sum by (reason) (rate(auth_failures_total[5m]))
+          labels:
+            component: security
+        
+        # Authorization metrics
+        - record: authz_requests_total:rate5m
+          expr: sum by (resource, action) (rate(authz_requests_total[5m]))
+          labels:
+            component: security
+        - record: authz_denials_total:rate5m
+          expr: sum by (reason) (rate(authz_denials_total[5m]))
+          labels:
+            component: security
+        
+        # mTLS metrics
+        - record: mtls_connections_total:rate5m
+          expr: sum by (status) (rate(mtls_connections_total[5m]))
+          labels:
+            component: security
+        - record: mtls_certificate_expiry_days
+          expr: (mtls_certificate_expiry_timestamp - time()) / 86400
+          labels:
+            component: security
+        
+        # Audit logging metrics
+        - record: audit_events_total:rate5m
+          expr: sum by (event_type, severity) (rate(audit_events_total[5m]))
+          labels:
+            component: security
+        - record: audit_log_ingestion_rate:rate5m
+          expr: sum by (source) (rate(audit_log_ingestion_total[5m]))
+          labels:
+            component: security
+        
+        # Security policy violations
+        - record: security_policy_violations_total:rate5m
+          expr: sum by (policy_type, violation_type) (rate(security_policy_violations_total[5m]))
+          labels:
+            component: security
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: security-alerts
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: alert-rules
+    severity: critical
+spec:
+  groups:
+    - name: security.alerts
+      rules:
+        # Authentication alerts
+        - alert: HighAuthenticationFailures
+          expr: auth_failures_total:rate5m > 10
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High authentication failure rate"
+            description: "Authentication failure rate is {{ $value }} failures per second. This may indicate a brute force attack or misconfiguration."
+        
+        - alert: AuthenticationServiceDown
+          expr: up{app="oauth2-proxy"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Authentication service is down"
+            description: "The OAuth2 proxy authentication service is not running. Users cannot authenticate to access observability components."
+        
+        # Authorization alerts
+        - alert: HighAuthorizationDenials
+          expr: authz_denials_total:rate5m > 5
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High authorization denial rate"
+            description: "Authorization denial rate is {{ $value }} denials per second. This may indicate unauthorized access attempts."
+        
+        # mTLS alerts
+        - alert: mTLSCertificateExpiringSoon
+          expr: mtls_certificate_expiry_days < 30
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "mTLS certificate expiring soon"
+            description: "mTLS certificate will expire in {{ $value }} days. Renew the certificate to avoid service disruption."
+        
+        - alert: mTLSCertificateExpired
+          expr: mtls_certificate_expiry_days < 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "mTLS certificate has expired"
+            description: "mTLS certificate has expired. Service communication may be disrupted. Renew the certificate immediately."
+        
+        - alert: mTLSConnectionFailures
+          expr: mtls_connections_total:rate5m{status="failed"} > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "mTLS connection failures detected"
+            description: "mTLS connection failures are occurring at {{ $value }} failures per second. Check certificate validity and configuration."
+        
+        # Audit logging alerts
+        - alert: AuditLoggingServiceDown
+          expr: up{app="audit-logging"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Audit logging service is down"
+            description: "The audit logging service is not running. Security events are not being logged, which may violate compliance requirements."
+        
+        - alert: HighAuditEventRate
+          expr: audit_events_total:rate5m > 1000
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High audit event rate"
+            description: "Audit event rate is {{ $value }} events per second. This may indicate unusual activity or a security incident."
+        
+        - alert: CriticalSecurityEvent
+          expr: audit_events_total:rate5m{severity="critical"} > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Critical security event detected"
+            description: "Critical security event detected: {{ $labels.event_type }}. Immediate investigation required."
+        
+        # Security policy alerts
+        - alert: SecurityPolicyViolation
+          expr: security_policy_violations_total:rate5m > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Security policy violation detected"
+            description: "Security policy violation detected: {{ $labels.policy_type }} - {{ $labels.violation_type }}. Review and update security policies."
+        
+        # Network security alerts
+        - alert: UnauthorizedNetworkAccess
+          expr: rate(network_access_denied_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Unauthorized network access attempt"
+            description: "Unauthorized network access attempt detected. Source: {{ $labels.source_ip }}, Destination: {{ $labels.destination_ip }}"
+        
+        # Data access alerts
+        - alert: UnauthorizedDataAccess
+          expr: rate(data_access_denied_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Unauthorized data access attempt"
+            description: "Unauthorized data access attempt detected. User: {{ $labels.user_id }}, Resource: {{ $labels.resource }}, Action: {{ $labels.action }}"

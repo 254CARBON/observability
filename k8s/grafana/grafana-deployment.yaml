@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: observability
+  labels:
+    app: grafana
+# Local/dev deployment: one replica, PVC-backed storage for dashboards,
+# config provisioned via ConfigMaps. Hardened settings via patches for prod.
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      serviceAccountName: grafana
+      containers:
+      - name: grafana
+        image: grafana/grafana:10.2.0
+        ports:
+        - containerPort: 3000
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 200m
+          limits:
+            memory: 1Gi
+            cpu: 500m
+        volumeMounts:
+        - name: grafana-config-volume
+          mountPath: /etc/grafana/grafana.ini
+          subPath: grafana.ini
+        - name: grafana-storage-volume
+          mountPath: /var/lib/grafana
+        - name: grafana-datasources-volume
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: grafana-dashboard-provisioning-volume
+          mountPath: /etc/grafana/provisioning/dashboards
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "admin"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: grafana-config-volume
+        configMap:
+          defaultMode: 420
+          name: grafana-config
+      - name: grafana-storage-volume
+        persistentVolumeClaim:
+          claimName: grafana-storage
+      - name: grafana-datasources-volume
+        configMap:
+          defaultMode: 420
+          name: grafana-datasources
+      - name: grafana-dashboard-provisioning-volume
+        configMap:
+          defaultMode: 420
+          name: grafana-dashboard-provisioning
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: observability
+  labels:
+    app: grafana
+spec:
+  selector:
+    app: grafana
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-storage
+  namespace: observability
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard

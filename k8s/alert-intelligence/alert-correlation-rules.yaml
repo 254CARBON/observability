@@ -1,0 +1,260 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: alert-intelligence-recording-rules
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: recording-rules
+spec:
+  groups:
+    - name: alert.intelligence.rules
+      rules:
+        # Alert correlation rules
+        - record: alert_intelligence_correlation_score:avg
+          expr: avg by (alert_group) (alert_intelligence_correlation_score)
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_correlation_score:max
+          expr: max by (alert_group) (alert_intelligence_correlation_score)
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_correlation_score:rate5m
+          expr: avg by (alert_group) (rate(alert_intelligence_correlation_score[5m]))
+          labels:
+            component: alert-intelligence
+            
+        # Alert deduplication rules
+        - record: alert_intelligence_deduplication_rate:avg
+          expr: avg by (strategy) (alert_intelligence_deduplication_rate)
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_deduplication_rate:max
+          expr: max by (strategy) (alert_intelligence_deduplication_rate)
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_deduplication_rate:rate5m
+          expr: avg by (strategy) (rate(alert_intelligence_deduplication_rate[5m]))
+          labels:
+            component: alert-intelligence
+            
+        # Alert intelligence rules
+        - record: alert_intelligence_score:avg
+          expr: avg by (model_type) (alert_intelligence_score)
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_score:max
+          expr: max by (model_type) (alert_intelligence_score)
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_score:rate5m
+          expr: avg by (model_type) (rate(alert_intelligence_score[5m]))
+          labels:
+            component: alert-intelligence
+            
+        # Alert processing rules
+        - record: alert_intelligence_processing_duration:avg
+          expr: avg(alert_intelligence_processing_duration_seconds)
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_processing_duration:p95
+          expr: histogram_quantile(0.95, alert_intelligence_processing_duration_seconds)
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_processing_duration:p99
+          expr: histogram_quantile(0.99, alert_intelligence_processing_duration_seconds)
+          labels:
+            component: alert-intelligence
+            
+        # Alert processing error rules
+        - record: alert_intelligence_processing_errors:rate5m
+          expr: sum by (error_type) (rate(alert_intelligence_processing_errors_total[5m]))
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_processing_errors:rate1h
+          expr: sum by (error_type) (rate(alert_intelligence_processing_errors_total[1h]))
+          labels:
+            component: alert-intelligence
+            
+        # Alert intelligence health rules
+        - record: alert_intelligence_health_score
+          expr: |
+            (
+              alert_intelligence_correlation_score:avg
+              +
+              alert_intelligence_deduplication_rate:avg
+              +
+              alert_intelligence_score:avg
+            ) / 3
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_health_threshold
+          expr: 0.7
+          labels:
+            component: alert-intelligence
+            
+        # Alert intelligence performance rules
+        - record: alert_intelligence_performance_score
+          expr: |
+            (
+              alert_intelligence_processing_duration:avg < 1.0
+              +
+              alert_intelligence_processing_errors:rate5m < 0.01
+            ) / 2
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_performance_threshold
+          expr: 0.8
+          labels:
+            component: alert-intelligence
+            
+        # Alert intelligence efficiency rules
+        - record: alert_intelligence_efficiency_score
+          expr: |
+            (
+              alert_intelligence_correlation_score:avg
+              *
+              alert_intelligence_deduplication_rate:avg
+              *
+              alert_intelligence_score:avg
+            ) ^ (1/3)
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_efficiency_threshold
+          expr: 0.6
+          labels:
+            component: alert-intelligence
+            
+        # Alert intelligence capacity rules
+        - record: alert_intelligence_capacity_utilization
+          expr: |
+            count(alert_intelligence_correlation_score) / 1000
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_capacity_threshold
+          expr: 0.8
+          labels:
+            component: alert-intelligence
+            
+        # Alert intelligence quality rules
+        - record: alert_intelligence_quality_score
+          expr: |
+            (
+              alert_intelligence_correlation_score:avg > 0.5
+              +
+              alert_intelligence_deduplication_rate:avg > 0.3
+              +
+              alert_intelligence_score:avg > 0.4
+            ) / 3
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_quality_threshold
+          expr: 0.7
+          labels:
+            component: alert-intelligence
+            
+        # Alert intelligence reliability rules
+        - record: alert_intelligence_reliability_score
+          expr: |
+            1 - (
+              alert_intelligence_processing_errors:rate5m
+              /
+              alert_intelligence_processing_duration:avg
+            )
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_reliability_threshold
+          expr: 0.9
+          labels:
+            component: alert-intelligence
+            
+        # Alert intelligence scalability rules
+        - record: alert_intelligence_scalability_score
+          expr: |
+            alert_intelligence_processing_duration:avg < 2.0
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_scalability_threshold
+          expr: 0.8
+          labels:
+            component: alert-intelligence
+            
+        # Alert intelligence accuracy rules
+        - record: alert_intelligence_accuracy_score
+          expr: |
+            (
+              alert_intelligence_correlation_score:avg
+              +
+              alert_intelligence_deduplication_rate:avg
+            ) / 2
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_accuracy_threshold
+          expr: 0.8
+          labels:
+            component: alert-intelligence
+            
+        # Alert intelligence precision rules
+        - record: alert_intelligence_precision_score
+          expr: |
+            alert_intelligence_correlation_score:avg
+            /
+            (alert_intelligence_correlation_score:avg + alert_intelligence_processing_errors:rate5m)
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_precision_threshold
+          expr: 0.9
+          labels:
+            component: alert-intelligence
+            
+        # Alert intelligence recall rules
+        - record: alert_intelligence_recall_score
+          expr: |
+            alert_intelligence_deduplication_rate:avg
+            /
+            (alert_intelligence_deduplication_rate:avg + alert_intelligence_processing_errors:rate5m)
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_recall_threshold
+          expr: 0.9
+          labels:
+            component: alert-intelligence
+            
+        # Alert intelligence F1 score rules
+        - record: alert_intelligence_f1_score
+          expr: |
+            2 * (
+              alert_intelligence_precision_score
+              *
+              alert_intelligence_recall_score
+            ) / (
+              alert_intelligence_precision_score
+              +
+              alert_intelligence_recall_score
+            )
+          labels:
+            component: alert-intelligence
+            
+        - record: alert_intelligence_f1_threshold
+          expr: 0.8
+          labels:
+            component: alert-intelligence

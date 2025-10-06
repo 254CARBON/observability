@@ -1,0 +1,556 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cost-analytics
+  namespace: observability
+  labels:
+    app: cost-analytics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cost-analytics
+  template:
+    metadata:
+      labels:
+        app: cost-analytics
+    spec:
+      containers:
+        - name: cost-analytics
+          image: python:3.11-slim
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              pip install prometheus-client pandas numpy scikit-learn flask gunicorn &&
+              python /app/cost_analytics.py
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 9090
+              name: metrics
+          env:
+            - name: CONFIG_PATH
+              value: "/etc/cost-analytics/config.yaml"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: METRICS_PORT
+              value: "9090"
+            - name: API_PORT
+              value: "8080"
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/cost-analytics
+            - name: app-volume
+              mountPath: /app
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: config-volume
+          configMap:
+            name: cost-analytics-config
+        - name: app-volume
+          configMap:
+            name: cost-analytics-app
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cost-analytics
+  namespace: observability
+  labels:
+    app: cost-analytics
+spec:
+  type: ClusterIP
+  selector:
+    app: cost-analytics
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cost-analytics-app
+  namespace: observability
+data:
+  cost_analytics.py: |
+    import os
+    import yaml
+    import json
+    import time
+    import logging
+    import threading
+    from datetime import datetime, timedelta
+    from typing import Dict, List, Any, Optional
+    from dataclasses import dataclass
+    from flask import Flask, jsonify, request
+    from prometheus_client import Counter, Histogram, Gauge, start_http_server
+    import requests
+    import pandas as pd
+    import numpy as np
+    from sklearn.linear_model import LinearRegression
+    from sklearn.preprocessing import StandardScaler
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    
+    # Prometheus metrics
+    cost_metrics = Gauge('cost_analytics_total_cost', 'Total cost by service', ['service', 'tenant'])
+    cost_efficiency = Gauge('cost_analytics_efficiency', 'Cost efficiency metrics', ['metric_type'])
+    optimization_savings = Gauge('cost_analytics_savings', 'Potential savings from optimization', ['optimization_type'])
+    query_duration = Histogram('cost_analytics_query_duration_seconds', 'Query duration')
+    query_errors = Counter('cost_analytics_query_errors_total', 'Query errors', ['error_type'])
+    
+    @dataclass
+    class CostModel:
+        """Cost model configuration"""
+        infrastructure: Dict[str, Any]
+        services: Dict[str, Any]
+        observability: Dict[str, Any]
+        
+    @dataclass
+    class CostData:
+        """Cost data structure"""
+        timestamp: datetime
+        service: str
+        tenant: Optional[str]
+        cost: float
+        resource_type: str
+        resource_amount: float
+        
+    class CostAnalytics:
+        """Main cost analytics service"""
+        
+        def __init__(self, config_path: str):
+            self.config = self._load_config(config_path)
+            self.cost_model = CostModel(**self.config['cost_models'])
+            self.prometheus_endpoint = self.config['data_sources']['prometheus']['endpoint']
+            self.cost_data: List[CostData] = []
+            self.app = Flask(__name__)
+            self._setup_routes()
+            
+        def _load_config(self, config_path: str) -> Dict[str, Any]:
+            """Load configuration from YAML file"""
+            try:
+                with open(config_path, 'r') as f:
+                    return yaml.safe_load(f)
+            except Exception as e:
+                logger.error(f"Failed to load config: {e}")
+                raise
+                
+        def _setup_routes(self):
+            """Setup Flask routes"""
+            
+            @self.app.route('/health')
+            def health():
+                return jsonify({"status": "healthy"})
+                
+            @self.app.route('/ready')
+            def ready():
+                return jsonify({"status": "ready"})
+                
+            @self.app.route('/api/v1/cost/breakdown')
+            def cost_breakdown():
+                """Get cost breakdown by service and tenant"""
+                try:
+                    breakdown = self._calculate_cost_breakdown()
+                    return jsonify(breakdown)
+                except Exception as e:
+                    logger.error(f"Error calculating cost breakdown: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.app.route('/api/v1/cost/trends')
+            def cost_trends():
+                """Get cost trends over time"""
+                try:
+                    trends = self._calculate_cost_trends()
+                    return jsonify(trends)
+                except Exception as e:
+                    logger.error(f"Error calculating cost trends: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.app.route('/api/v1/cost/optimization')
+            def optimization_recommendations():
+                """Get cost optimization recommendations"""
+                try:
+                    recommendations = self._generate_optimization_recommendations()
+                    return jsonify(recommendations)
+                except Exception as e:
+                    logger.error(f"Error generating optimization recommendations: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.app.route('/api/v1/cost/efficiency')
+            def cost_efficiency():
+                """Get cost efficiency metrics"""
+                try:
+                    efficiency = self._calculate_cost_efficiency()
+                    return jsonify(efficiency)
+                except Exception as e:
+                    logger.error(f"Error calculating cost efficiency: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+        def _query_prometheus(self, query: str, start_time: datetime, end_time: datetime) -> List[Dict]:
+            """Query Prometheus for metrics"""
+            try:
+                params = {
+                    'query': query,
+                    'start': start_time.timestamp(),
+                    'end': end_time.timestamp(),
+                    'step': '1h'  # 1 hour intervals
+                }
+                
+                response = requests.get(
+                    f"{self.prometheus_endpoint}/api/v1/query_range",
+                    params=params,
+                    timeout=30
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                if data['status'] == 'success':
+                    return data['data']['result']
+                else:
+                    raise Exception(f"Prometheus query failed: {data.get('error', 'Unknown error')}")
+                    
+            except Exception as e:
+                logger.error(f"Prometheus query error: {e}")
+                query_errors.labels(error_type=type(e).__name__).inc()
+                raise
+                
+        def _calculate_resource_costs(self, start_time: datetime, end_time: datetime) -> List[CostData]:
+            """Calculate costs based on resource usage"""
+            cost_data = []
+            
+            # CPU costs
+            cpu_query = 'avg by (instance) (rate(node_cpu_seconds_total{mode!="idle"}[5m]))'
+            cpu_data = self._query_prometheus(cpu_query, start_time, end_time)
+            
+            for result in cpu_data:
+                for value in result['values']:
+                    timestamp = datetime.fromtimestamp(value[0])
+                    cpu_usage = float(value[1])
+                    cost = cpu_usage * self.cost_model.infrastructure['cpu']['cost_per_core_hour']
+                    
+                    cost_data.append(CostData(
+                        timestamp=timestamp,
+                        service='infrastructure',
+                        tenant=None,
+                        cost=cost,
+                        resource_type='cpu',
+                        resource_amount=cpu_usage
+                    ))
+                    
+            # Memory costs
+            memory_query = 'avg by (instance) (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes'
+            memory_data = self._query_prometheus(memory_query, start_time, end_time)
+            
+            for result in memory_data:
+                for value in result['values']:
+                    timestamp = datetime.fromtimestamp(value[0])
+                    memory_usage = float(value[1])
+                    cost = memory_usage * self.cost_model.infrastructure['memory']['cost_per_gb_hour']
+                    
+                    cost_data.append(CostData(
+                        timestamp=timestamp,
+                        service='infrastructure',
+                        tenant=None,
+                        cost=cost,
+                        resource_type='memory',
+                        resource_amount=memory_usage
+                    ))
+                    
+            return cost_data
+            
+        def _calculate_service_costs(self, start_time: datetime, end_time: datetime) -> List[CostData]:
+            """Calculate costs based on service usage"""
+            cost_data = []
+            
+            # Service request costs
+            for service_name, service_config in self.cost_model.services.items():
+                query = f'sum(rate(gateway_http_requests_total{{service="{service_name}"}}[5m]))'
+                service_data = self._query_prometheus(query, start_time, end_time)
+                
+                for result in service_data:
+                    for value in result['values']:
+                        timestamp = datetime.fromtimestamp(value[0])
+                        request_rate = float(value[1])
+                        cost = service_config['base_cost_per_hour'] + (request_rate * service_config['scaling_factor'])
+                        
+                        cost_data.append(CostData(
+                            timestamp=timestamp,
+                            service=service_name,
+                            tenant=None,
+                            cost=cost,
+                            resource_type='requests',
+                            resource_amount=request_rate
+                        ))
+                        
+            return cost_data
+            
+        def _calculate_observability_costs(self, start_time: datetime, end_time: datetime) -> List[CostData]:
+            """Calculate observability costs"""
+            cost_data = []
+            
+            # Prometheus metrics costs
+            metrics_query = 'sum(prometheus_tsdb_symbol_table_size_bytes)'
+            metrics_data = self._query_prometheus(metrics_query, start_time, end_time)
+            
+            for result in metrics_data:
+                for value in result['values']:
+                    timestamp = datetime.fromtimestamp(value[0])
+                    metrics_size = float(value[1])
+                    cost = metrics_size * self.cost_model.observability['prometheus']['cost_per_metric_hour']
+                    
+                    cost_data.append(CostData(
+                        timestamp=timestamp,
+                        service='prometheus',
+                        tenant=None,
+                        cost=cost,
+                        resource_type='metrics',
+                        resource_amount=metrics_size
+                    ))
+                    
+            return cost_data
+            
+        def _calculate_cost_breakdown(self) -> Dict[str, Any]:
+            """Calculate cost breakdown by service and tenant"""
+            end_time = datetime.now()
+            start_time = end_time - timedelta(days=7)  # Last 7 days
+            
+            # Collect all cost data
+            resource_costs = self._calculate_resource_costs(start_time, end_time)
+            service_costs = self._calculate_service_costs(start_time, end_time)
+            observability_costs = self._calculate_observability_costs(start_time, end_time)
+            
+            all_costs = resource_costs + service_costs + observability_costs
+            
+            # Group by service
+            service_breakdown = {}
+            for cost in all_costs:
+                if cost.service not in service_breakdown:
+                    service_breakdown[cost.service] = {
+                        'total_cost': 0.0,
+                        'resource_costs': {},
+                        'cost_per_hour': 0.0
+                    }
+                    
+                service_breakdown[cost.service]['total_cost'] += cost.cost
+                service_breakdown[cost.service]['cost_per_hour'] += cost.cost
+                
+                if cost.resource_type not in service_breakdown[cost.service]['resource_costs']:
+                    service_breakdown[cost.service]['resource_costs'][cost.resource_type] = 0.0
+                service_breakdown[cost.service]['resource_costs'][cost.resource_type] += cost.cost
+                
+            # Update Prometheus metrics
+            for service, data in service_breakdown.items():
+                cost_metrics.labels(service=service, tenant='default').set(data['total_cost'])
+                
+            return {
+                'period': {
+                    'start': start_time.isoformat(),
+                    'end': end_time.isoformat()
+                },
+                'total_cost': sum(data['total_cost'] for data in service_breakdown.values()),
+                'service_breakdown': service_breakdown
+            }
+            
+        def _calculate_cost_trends(self) -> Dict[str, Any]:
+            """Calculate cost trends over time"""
+            end_time = datetime.now()
+            start_time = end_time - timedelta(days=30)  # Last 30 days
+            
+            # Get cost data for trend analysis
+            resource_costs = self._calculate_resource_costs(start_time, end_time)
+            service_costs = self._calculate_service_costs(start_time, end_time)
+            observability_costs = self._calculate_observability_costs(start_time, end_time)
+            
+            all_costs = resource_costs + service_costs + observability_costs
+            
+            # Group by day
+            daily_costs = {}
+            for cost in all_costs:
+                day = cost.timestamp.date()
+                if day not in daily_costs:
+                    daily_costs[day] = 0.0
+                daily_costs[day] += cost.cost
+                
+            # Calculate trends
+            days = sorted(daily_costs.keys())
+            costs = [daily_costs[day] for day in days]
+            
+            if len(costs) > 1:
+                # Simple linear regression for trend
+                X = np.array(range(len(costs))).reshape(-1, 1)
+                y = np.array(costs)
+                
+                model = LinearRegression()
+                model.fit(X, y)
+                
+                trend_slope = model.coef_[0]
+                trend_direction = "increasing" if trend_slope > 0 else "decreasing"
+                
+                # Calculate growth rate
+                if costs[0] > 0:
+                    growth_rate = (costs[-1] - costs[0]) / costs[0]
+                else:
+                    growth_rate = 0.0
+                    
+            else:
+                trend_slope = 0.0
+                trend_direction = "stable"
+                growth_rate = 0.0
+                
+            return {
+                'period': {
+                    'start': start_time.isoformat(),
+                    'end': end_time.isoformat()
+                },
+                'daily_costs': {str(day): cost for day, cost in daily_costs.items()},
+                'trend': {
+                    'slope': trend_slope,
+                    'direction': trend_direction,
+                    'growth_rate': growth_rate
+                },
+                'total_cost': sum(costs),
+                'average_daily_cost': sum(costs) / len(costs) if costs else 0.0
+            }
+            
+        def _generate_optimization_recommendations(self) -> Dict[str, Any]:
+            """Generate cost optimization recommendations"""
+            recommendations = []
+            
+            # Get current cost breakdown
+            breakdown = self._calculate_cost_breakdown()
+            
+            # Right-sizing recommendations
+            for service, data in breakdown['service_breakdown'].items():
+                if 'cpu' in data['resource_costs']:
+                    cpu_cost = data['resource_costs']['cpu']
+                    if cpu_cost > 10.0:  # High CPU cost threshold
+                        recommendations.append({
+                            'type': 'right_sizing',
+                            'service': service,
+                            'description': f'Consider right-sizing {service} - high CPU costs detected',
+                            'potential_savings': cpu_cost * 0.2,  # 20% potential savings
+                            'priority': 'high'
+                        })
+                        
+            # Reserved instance recommendations
+            total_cost = breakdown['total_cost']
+            if total_cost > 100.0:  # High total cost threshold
+                recommendations.append({
+                    'type': 'reserved_instances',
+                    'service': 'infrastructure',
+                    'description': 'Consider reserved instances for predictable workloads',
+                    'potential_savings': total_cost * 0.3,  # 30% potential savings
+                    'priority': 'medium'
+                })
+                
+            # Auto-scaling recommendations
+            for service, data in breakdown['service_breakdown'].items():
+                if data['cost_per_hour'] > 5.0:  # High hourly cost threshold
+                    recommendations.append({
+                        'type': 'auto_scaling',
+                        'service': service,
+                        'description': f'Implement auto-scaling for {service} to optimize resource usage',
+                        'potential_savings': data['cost_per_hour'] * 0.15,  # 15% potential savings
+                        'priority': 'medium'
+                    })
+                    
+            # Update Prometheus metrics
+            total_savings = sum(rec['potential_savings'] for rec in recommendations)
+            optimization_savings.labels(optimization_type='total').set(total_savings)
+            
+            return {
+                'recommendations': recommendations,
+                'total_potential_savings': total_savings,
+                'recommendation_count': len(recommendations)
+            }
+            
+        def _calculate_cost_efficiency(self) -> Dict[str, Any]:
+            """Calculate cost efficiency metrics"""
+            end_time = datetime.now()
+            start_time = end_time - timedelta(days=7)  # Last 7 days
+            
+            # Get cost and usage data
+            breakdown = self._calculate_cost_breakdown()
+            
+            # Calculate efficiency metrics
+            efficiency_metrics = {}
+            
+            # Cost per request
+            total_requests_query = 'sum(rate(gateway_http_requests_total[5m]))'
+            requests_data = self._query_prometheus(total_requests_query, start_time, end_time)
+            
+            if requests_data and requests_data[0]['values']:
+                total_requests = sum(float(v[1]) for v in requests_data[0]['values'])
+                if total_requests > 0:
+                    efficiency_metrics['cost_per_request'] = breakdown['total_cost'] / total_requests
+                else:
+                    efficiency_metrics['cost_per_request'] = 0.0
+            else:
+                efficiency_metrics['cost_per_request'] = 0.0
+                
+            # Cost per GB processed (example)
+            efficiency_metrics['cost_per_gb_processed'] = breakdown['total_cost'] / 100.0  # Placeholder
+            
+            # Cost per user (example)
+            efficiency_metrics['cost_per_user'] = breakdown['total_cost'] / 1000.0  # Placeholder
+            
+            # Update Prometheus metrics
+            for metric_type, value in efficiency_metrics.items():
+                cost_efficiency.labels(metric_type=metric_type).set(value)
+                
+            return {
+                'period': {
+                    'start': start_time.isoformat(),
+                    'end': end_time.isoformat()
+                },
+                'efficiency_metrics': efficiency_metrics,
+                'total_cost': breakdown['total_cost']
+            }
+            
+        def run(self):
+            """Run the cost analytics service"""
+            logger.info("Starting cost analytics service...")
+            
+            # Start Prometheus metrics server
+            start_http_server(int(os.getenv('METRICS_PORT', 9090)))
+            
+            # Start Flask app
+            port = int(os.getenv('API_PORT', 8080))
+            self.app.run(host='0.0.0.0', port=port, debug=False)
+            
+    if __name__ == '__main__':
+        config_path = os.getenv('CONFIG_PATH', '/etc/cost-analytics/config.yaml')
+        service = CostAnalytics(config_path)
+        service.run()

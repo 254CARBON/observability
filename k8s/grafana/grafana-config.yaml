@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-config
+  namespace: observability
+# Basic Grafana configuration with anonymous read access for local dev.
+# In production, disable anonymous auth and source admin credentials from Secret.
+data:
+  grafana.ini: |
+    [server]
+    root_url = http://localhost:3000/
+    
+    [security]
+    admin_user = admin
+    admin_password = admin
+    
+    [users]
+    allow_sign_up = false
+    
+    [auth.anonymous]
+    enabled = true
+    org_role = Viewer
+    
+    [log]
+    level = info
+    
+    [paths]
+    data = /var/lib/grafana/
+    logs = /var/log/grafana
+    plugins = /var/lib/grafana/plugins
+    provisioning = /etc/grafana/provisioning
+    
+    [dashboards]
+    default_home_dashboard_path = /etc/grafana/provisioning/dashboards/home.json
+    
+    [alerting]
+    enabled = true
+    execute_alerts = true
+    
+    [unified_alerting]
+    enabled = true
+    admin_config_path = /etc/grafana/provisioning/alerting/admin.yml
+    
+    [feature_toggles]
+    enable = "publicDashboards,correlations,panelTitleSearch,serviceAccounts,useCachingService,redshiftAsyncQueryDataSupport,newPanelChromeUI,disableAngularSupport,publicDashboards,panelTitleSearch,serviceAccounts,useCachingService,redshiftAsyncQueryDataSupport,newPanelChromeUI,disableAngularSupport"

@@ -1,0 +1,818 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-correlation
+  namespace: observability
+  labels:
+    app: alert-correlation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alert-correlation
+  template:
+    metadata:
+      labels:
+        app: alert-correlation
+    spec:
+      containers:
+        - name: alert-correlation
+          image: python:3.11-slim
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              pip install prometheus-client pandas numpy scikit-learn flask gunicorn requests redis &&
+              python /app/alert_correlation.py
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 9090
+              name: metrics
+          env:
+            - name: CONFIG_PATH
+              value: "/etc/alert-correlation/config.yaml"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: METRICS_PORT
+              value: "9090"
+            - name: API_PORT
+              value: "8080"
+            - name: REDIS_URL
+              value: "redis://redis.observability.svc.cluster.local:6379"
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/alert-correlation
+            - name: app-volume
+              mountPath: /app
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: config-volume
+          configMap:
+            name: alert-correlation-config
+        - name: app-volume
+          configMap:
+            name: alert-correlation-app
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-correlation
+  namespace: observability
+  labels:
+    app: alert-correlation
+spec:
+  type: ClusterIP
+  selector:
+    app: alert-correlation
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alert-correlation-app
+  namespace: observability
+data:
+  alert_correlation.py: |
+    import os
+    import yaml
+    import json
+    import time
+    import logging
+    import threading
+    import hashlib
+    from datetime import datetime, timedelta
+    from typing import Dict, List, Any, Optional, Tuple
+    from dataclasses import dataclass, asdict
+    from flask import Flask, jsonify, request
+    from prometheus_client import Counter, Histogram, Gauge, start_http_server
+    import requests
+    import pandas as pd
+    import numpy as np
+    from sklearn.ensemble import IsolationForest, RandomForestRegressor
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.metrics.pairwise import cosine_similarity
+    import redis
+    from collections import defaultdict, deque
+    import asyncio
+    import aiohttp
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    
+    # Prometheus metrics
+    alert_correlation_score = Gauge('alert_intelligence_correlation_score', 'Alert correlation score', ['alert_group', 'algorithm'])
+    alert_deduplication_rate = Gauge('alert_intelligence_deduplication_rate', 'Alert deduplication rate', ['strategy'])
+    alert_intelligence_score = Gauge('alert_intelligence_score', 'Alert intelligence score', ['alert_id', 'model_type'])
+    alert_processing_duration = Histogram('alert_intelligence_processing_duration_seconds', 'Alert processing duration')
+    alert_processing_errors = Counter('alert_intelligence_processing_errors_total', 'Alert processing errors', ['error_type'])
+    
+    @dataclass
+    class Alert:
+        """Alert data structure"""
+        id: str
+        name: str
+        severity: str
+        status: str
+        service: str
+        instance: str
+        labels: Dict[str, str]
+        annotations: Dict[str, str]
+        starts_at: datetime
+        ends_at: Optional[datetime]
+        fingerprint: str
+        value: float
+        source: str
+        
+    @dataclass
+    class CorrelationResult:
+        """Correlation result structure"""
+        alert_group: str
+        correlation_score: float
+        algorithm: str
+        alerts: List[Alert]
+        confidence: float
+        reasoning: str
+        
+    @dataclass
+    class DeduplicationResult:
+        """Deduplication result structure"""
+        original_alerts: List[Alert]
+        deduplicated_alerts: List[Alert]
+        strategy: str
+        confidence: float
+        reasoning: str
+        
+    class AlertCorrelationEngine:
+        """Main alert correlation engine"""
+        
+        def __init__(self, config_path: str):
+            self.config = self._load_config(config_path)
+            self.prometheus_endpoint = self.config['data_sources']['prometheus']['endpoint']
+            self.alertmanager_endpoint = self.config['data_sources']['alertmanager']['endpoint']
+            self.tempo_endpoint = self.config['data_sources']['tempo']['endpoint']
+            self.loki_endpoint = self.config['data_sources']['loki']['endpoint']
+            
+            # Initialize Redis for caching
+            self.redis_client = redis.Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379'))
+            
+            # Initialize ML models
+            self.models = self._initialize_models()
+            
+            # Initialize Flask app
+            self.app = Flask(__name__)
+            self._setup_routes()
+            
+            # Alert storage
+            self.alerts: Dict[str, Alert] = {}
+            self.alert_history: deque = deque(maxlen=10000)
+            
+        def _load_config(self, config_path: str) -> Dict[str, Any]:
+            """Load configuration from YAML file"""
+            try:
+                with open(config_path, 'r') as f:
+                    return yaml.safe_load(f)
+            except Exception as e:
+                logger.error(f"Failed to load config: {e}")
+                raise
+                
+        def _initialize_models(self) -> Dict[str, Any]:
+            """Initialize ML models"""
+            models = {}
+            
+            # Pattern recognition model
+            if self.config['intelligence']['models']['pattern_recognition']['enabled']:
+                models['pattern_recognition'] = IsolationForest(
+                    contamination=0.1,
+                    random_state=42
+                )
+                
+            # Severity prediction model
+            if self.config['intelligence']['models']['severity_prediction']['enabled']:
+                models['severity_prediction'] = RandomForestRegressor(
+                    n_estimators=100,
+                    random_state=42
+                )
+                
+            # Impact prediction model
+            if self.config['intelligence']['models']['impact_prediction']['enabled']:
+                models['impact_prediction'] = RandomForestRegressor(
+                    n_estimators=100,
+                    random_state=42
+                )
+                
+            # Resolution time prediction model
+            if self.config['intelligence']['models']['resolution_prediction']['enabled']:
+                models['resolution_prediction'] = RandomForestRegressor(
+                    n_estimators=100,
+                    random_state=42
+                )
+                
+            return models
+            
+        def _setup_routes(self):
+            """Setup Flask routes"""
+            
+            @self.app.route('/health')
+            def health():
+                return jsonify({"status": "healthy"})
+                
+            @self.app.route('/ready')
+            def ready():
+                return jsonify({"status": "ready"})
+                
+            @self.app.route('/api/v1/alerts/correlate', methods=['POST'])
+            def correlate_alerts():
+                """Correlate alerts"""
+                try:
+                    data = request.get_json()
+                    alerts = [Alert(**alert) for alert in data.get('alerts', [])]
+                    
+                    result = self._correlate_alerts(alerts)
+                    return jsonify(asdict(result))
+                    
+                except Exception as e:
+                    logger.error(f"Error correlating alerts: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.app.route('/api/v1/alerts/deduplicate', methods=['POST'])
+            def deduplicate_alerts():
+                """Deduplicate alerts"""
+                try:
+                    data = request.get_json()
+                    alerts = [Alert(**alert) for alert in data.get('alerts', [])]
+                    
+                    result = self._deduplicate_alerts(alerts)
+                    return jsonify(asdict(result))
+                    
+                except Exception as e:
+                    logger.error(f"Error deduplicating alerts: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.app.route('/api/v1/alerts/intelligence', methods=['POST'])
+            def analyze_alert_intelligence():
+                """Analyze alert intelligence"""
+                try:
+                    data = request.get_json()
+                    alert = Alert(**data.get('alert', {}))
+                    
+                    result = self._analyze_alert_intelligence(alert)
+                    return jsonify(result)
+                    
+                except Exception as e:
+                    logger.error(f"Error analyzing alert intelligence: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.app.route('/api/v1/alerts/patterns', methods=['GET'])
+            def get_alert_patterns():
+                """Get alert patterns"""
+                try:
+                    patterns = self._get_alert_patterns()
+                    return jsonify(patterns)
+                    
+                except Exception as e:
+                    logger.error(f"Error getting alert patterns: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.app.route('/api/v1/alerts/trends', methods=['GET'])
+            def get_alert_trends():
+                """Get alert trends"""
+                try:
+                    trends = self._get_alert_trends()
+                    return jsonify(trends)
+                    
+                except Exception as e:
+                    logger.error(f"Error getting alert trends: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+        def _query_prometheus(self, query: str, start_time: datetime, end_time: datetime) -> List[Dict]:
+            """Query Prometheus for metrics"""
+            try:
+                params = {
+                    'query': query,
+                    'start': start_time.timestamp(),
+                    'end': end_time.timestamp(),
+                    'step': '1m'
+                }
+                
+                response = requests.get(
+                    f"{self.prometheus_endpoint}/api/v1/query_range",
+                    params=params,
+                    timeout=30
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                if data['status'] == 'success':
+                    return data['data']['result']
+                else:
+                    raise Exception(f"Prometheus query failed: {data.get('error', 'Unknown error')}")
+                    
+            except Exception as e:
+                logger.error(f"Prometheus query error: {e}")
+                alert_processing_errors.labels(error_type=type(e).__name__).inc()
+                raise
+                
+        def _query_alertmanager(self, endpoint: str) -> Dict[str, Any]:
+            """Query Alertmanager for alerts"""
+            try:
+                response = requests.get(
+                    f"{self.alertmanager_endpoint}/api/v1/{endpoint}",
+                    timeout=10
+                )
+                response.raise_for_status()
+                return response.json()
+                
+            except Exception as e:
+                logger.error(f"Alertmanager query error: {e}")
+                alert_processing_errors.labels(error_type=type(e).__name__).inc()
+                raise
+                
+        def _extract_features(self, alert: Alert) -> np.ndarray:
+            """Extract features from alert for ML models"""
+            features = []
+            
+            # Temporal features
+            if self.config['intelligence']['features']['temporal']['enabled']:
+                features.extend([
+                    alert.starts_at.hour,
+                    alert.starts_at.weekday(),
+                    time.time() - alert.starts_at.timestamp(),
+                    len([a for a in self.alert_history if a.service == alert.service])
+                ])
+                
+            # Service features
+            if self.config['intelligence']['features']['service']['enabled']:
+                features.extend([
+                    hash(alert.service) % 1000,
+                    hash(alert.instance) % 1000,
+                    len(alert.labels),
+                    len(alert.annotations)
+                ])
+                
+            # Resource features (placeholder)
+            if self.config['intelligence']['features']['resource']['enabled']:
+                features.extend([0.5, 0.3, 0.2, 0.1])  # Placeholder values
+                
+            # Error features
+            if self.config['intelligence']['features']['error']['enabled']:
+                features.extend([
+                    hash(alert.name) % 1000,
+                    hash(alert.severity) % 1000,
+                    alert.value,
+                    len([a for a in self.alert_history if a.name == alert.name])
+                ])
+                
+            return np.array(features)
+            
+        def _correlate_alerts(self, alerts: List[Alert]) -> CorrelationResult:
+            """Correlate alerts using multiple algorithms"""
+            start_time = time.time()
+            
+            try:
+                if len(alerts) < 2:
+                    return CorrelationResult(
+                        alert_group="single",
+                        correlation_score=0.0,
+                        algorithm="none",
+                        alerts=alerts,
+                        confidence=0.0,
+                        reasoning="Insufficient alerts for correlation"
+                    )
+                    
+                # Apply different correlation algorithms
+                correlations = []
+                
+                # Temporal correlation
+                if self.config['correlation']['algorithms'][0]['enabled']:
+                    temporal_score = self._temporal_correlation(alerts)
+                    correlations.append(('temporal', temporal_score))
+                    
+                # Spatial correlation
+                if self.config['correlation']['algorithms'][1]['enabled']:
+                    spatial_score = self._spatial_correlation(alerts)
+                    correlations.append(('spatial', spatial_score))
+                    
+                # Causal correlation
+                if self.config['correlation']['algorithms'][2]['enabled']:
+                    causal_score = self._causal_correlation(alerts)
+                    correlations.append(('causal', causal_score))
+                    
+                # Semantic correlation
+                if self.config['correlation']['algorithms'][3]['enabled']:
+                    semantic_score = self._semantic_correlation(alerts)
+                    correlations.append(('semantic', semantic_score))
+                    
+                # Calculate weighted correlation score
+                total_score = 0.0
+                total_weight = 0.0
+                
+                for algorithm, score in correlations:
+                    weight = next(
+                        (alg['weight'] for alg in self.config['correlation']['algorithms'] 
+                         if alg['name'] == algorithm), 0.0
+                    )
+                    total_score += score * weight
+                    total_weight += weight
+                    
+                final_score = total_score / total_weight if total_weight > 0 else 0.0
+                
+                # Update Prometheus metrics
+                alert_correlation_score.labels(
+                    alert_group=f"group_{len(alerts)}",
+                    algorithm="combined"
+                ).set(final_score)
+                
+                # Calculate confidence
+                confidence = min(1.0, final_score * 1.2)
+                
+                # Generate reasoning
+                reasoning = self._generate_correlation_reasoning(correlations, final_score)
+                
+                # Update processing duration
+                alert_processing_duration.observe(time.time() - start_time)
+                
+                return CorrelationResult(
+                    alert_group=f"group_{len(alerts)}",
+                    correlation_score=final_score,
+                    algorithm="combined",
+                    alerts=alerts,
+                    confidence=confidence,
+                    reasoning=reasoning
+                )
+                
+            except Exception as e:
+                logger.error(f"Error correlating alerts: {e}")
+                alert_processing_errors.labels(error_type=type(e).__name__).inc()
+                raise
+                
+        def _temporal_correlation(self, alerts: List[Alert]) -> float:
+            """Calculate temporal correlation between alerts"""
+            if len(alerts) < 2:
+                return 0.0
+                
+            # Sort alerts by start time
+            sorted_alerts = sorted(alerts, key=lambda x: x.starts_at)
+            
+            # Calculate time differences
+            time_diffs = []
+            for i in range(1, len(sorted_alerts)):
+                diff = (sorted_alerts[i].starts_at - sorted_alerts[i-1].starts_at).total_seconds()
+                time_diffs.append(diff)
+                
+            # Calculate correlation based on time window
+            time_window = self.config['correlation']['time_window']['default']
+            window_seconds = self._parse_time_window(time_window)
+            
+            # Score based on how close alerts are in time
+            score = 0.0
+            for diff in time_diffs:
+                if diff <= window_seconds:
+                    score += 1.0 - (diff / window_seconds)
+                    
+            return score / len(time_diffs) if time_diffs else 0.0
+            
+        def _spatial_correlation(self, alerts: List[Alert]) -> float:
+            """Calculate spatial correlation between alerts"""
+            if len(alerts) < 2:
+                return 0.0
+                
+            # Group alerts by service and instance
+            service_groups = defaultdict(list)
+            for alert in alerts:
+                service_groups[alert.service].append(alert)
+                
+            # Calculate spatial correlation
+            score = 0.0
+            total_pairs = 0
+            
+            for service, service_alerts in service_groups.items():
+                if len(service_alerts) > 1:
+                    # Same service alerts are spatially correlated
+                    score += 1.0
+                    total_pairs += 1
+                    
+            return score / total_pairs if total_pairs > 0 else 0.0
+            
+        def _causal_correlation(self, alerts: List[Alert]) -> float:
+            """Calculate causal correlation between alerts"""
+            if len(alerts) < 2:
+                return 0.0
+                
+            # Simple causal correlation based on service dependencies
+            # In a real implementation, this would use service dependency graphs
+            score = 0.0
+            total_pairs = 0
+            
+            for i, alert1 in enumerate(alerts):
+                for j, alert2 in enumerate(alerts[i+1:], i+1):
+                    # Check if alerts are causally related
+                    if self._are_causally_related(alert1, alert2):
+                        score += 1.0
+                    total_pairs += 1
+                    
+            return score / total_pairs if total_pairs > 0 else 0.0
+            
+        def _semantic_correlation(self, alerts: List[Alert]) -> float:
+            """Calculate semantic correlation between alerts"""
+            if len(alerts) < 2:
+                return 0.0
+                
+            # Calculate semantic similarity based on alert names and labels
+            similarities = []
+            
+            for i, alert1 in enumerate(alerts):
+                for j, alert2 in enumerate(alerts[i+1:], i+1):
+                    similarity = self._calculate_semantic_similarity(alert1, alert2)
+                    similarities.append(similarity)
+                    
+            return np.mean(similarities) if similarities else 0.0
+            
+        def _are_causally_related(self, alert1: Alert, alert2: Alert) -> bool:
+            """Check if two alerts are causally related"""
+            # Simple heuristic: alerts from the same service are causally related
+            if alert1.service == alert2.service:
+                return True
+                
+            # Check for common labels that might indicate causality
+            common_labels = set(alert1.labels.keys()) & set(alert2.labels.keys())
+            if len(common_labels) > 0:
+                return True
+                
+            return False
+            
+        def _calculate_semantic_similarity(self, alert1: Alert, alert2: Alert) -> float:
+            """Calculate semantic similarity between two alerts"""
+            # Simple similarity based on alert names
+            name1_words = set(alert1.name.lower().split())
+            name2_words = set(alert2.name.lower().split())
+            
+            if not name1_words or not name2_words:
+                return 0.0
+                
+            intersection = name1_words & name2_words
+            union = name1_words | name2_words
+            
+            return len(intersection) / len(union) if union else 0.0
+            
+        def _generate_correlation_reasoning(self, correlations: List[Tuple[str, float]], final_score: float) -> str:
+            """Generate human-readable reasoning for correlation"""
+            reasoning_parts = []
+            
+            for algorithm, score in correlations:
+                if score > 0.5:
+                    reasoning_parts.append(f"{algorithm} correlation: {score:.2f}")
+                    
+            if final_score > 0.7:
+                reasoning_parts.append("High correlation detected")
+            elif final_score > 0.4:
+                reasoning_parts.append("Moderate correlation detected")
+            else:
+                reasoning_parts.append("Low correlation detected")
+                
+            return "; ".join(reasoning_parts)
+            
+        def _deduplicate_alerts(self, alerts: List[Alert]) -> DeduplicationResult:
+            """Deduplicate alerts using multiple strategies"""
+            start_time = time.time()
+            
+            try:
+                if len(alerts) < 2:
+                    return DeduplicationResult(
+                        original_alerts=alerts,
+                        deduplicated_alerts=alerts,
+                        strategy="none",
+                        confidence=1.0,
+                        reasoning="Insufficient alerts for deduplication"
+                    )
+                    
+                # Apply different deduplication strategies
+                deduplicated_alerts = []
+                seen_hashes = set()
+                
+                for alert in alerts:
+                    # Calculate hash for exact match
+                    alert_hash = self._calculate_alert_hash(alert)
+                    
+                    if alert_hash not in seen_hashes:
+                        deduplicated_alerts.append(alert)
+                        seen_hashes.add(alert_hash)
+                        
+                # Calculate deduplication rate
+                dedup_rate = 1.0 - (len(deduplicated_alerts) / len(alerts))
+                
+                # Update Prometheus metrics
+                alert_deduplication_rate.labels(strategy="exact_match").set(dedup_rate)
+                
+                # Calculate confidence
+                confidence = min(1.0, dedup_rate * 1.5)
+                
+                # Generate reasoning
+                reasoning = f"Deduplicated {len(alerts) - len(deduplicated_alerts)} alerts using exact match strategy"
+                
+                # Update processing duration
+                alert_processing_duration.observe(time.time() - start_time)
+                
+                return DeduplicationResult(
+                    original_alerts=alerts,
+                    deduplicated_alerts=deduplicated_alerts,
+                    strategy="exact_match",
+                    confidence=confidence,
+                    reasoning=reasoning
+                )
+                
+            except Exception as e:
+                logger.error(f"Error deduplicating alerts: {e}")
+                alert_processing_errors.labels(error_type=type(e).__name__).inc()
+                raise
+                
+        def _calculate_alert_hash(self, alert: Alert) -> str:
+            """Calculate hash for alert deduplication"""
+            # Create a hash based on key alert attributes
+            hash_input = f"{alert.name}:{alert.service}:{alert.instance}:{alert.severity}"
+            return hashlib.md5(hash_input.encode()).hexdigest()
+            
+        def _analyze_alert_intelligence(self, alert: Alert) -> Dict[str, Any]:
+            """Analyze alert intelligence using ML models"""
+            start_time = time.time()
+            
+            try:
+                # Extract features
+                features = self._extract_features(alert)
+                features = features.reshape(1, -1)
+                
+                # Apply ML models
+                intelligence_scores = {}
+                
+                # Pattern recognition
+                if 'pattern_recognition' in self.models:
+                    pattern_score = self.models['pattern_recognition'].decision_function(features)[0]
+                    intelligence_scores['pattern_recognition'] = float(pattern_score)
+                    
+                # Severity prediction
+                if 'severity_prediction' in self.models:
+                    severity_score = self.models['severity_prediction'].predict(features)[0]
+                    intelligence_scores['severity_prediction'] = float(severity_score)
+                    
+                # Impact prediction
+                if 'impact_prediction' in self.models:
+                    impact_score = self.models['impact_prediction'].predict(features)[0]
+                    intelligence_scores['impact_prediction'] = float(impact_score)
+                    
+                # Resolution time prediction
+                if 'resolution_prediction' in self.models:
+                    resolution_score = self.models['resolution_prediction'].predict(features)[0]
+                    intelligence_scores['resolution_prediction'] = float(resolution_score)
+                    
+                # Update Prometheus metrics
+                for model_type, score in intelligence_scores.items():
+                    alert_intelligence_score.labels(
+                        alert_id=alert.id,
+                        model_type=model_type
+                    ).set(score)
+                    
+                # Update processing duration
+                alert_processing_duration.observe(time.time() - start_time)
+                
+                return {
+                    'alert_id': alert.id,
+                    'intelligence_scores': intelligence_scores,
+                    'analysis_timestamp': datetime.now().isoformat()
+                }
+                
+            except Exception as e:
+                logger.error(f"Error analyzing alert intelligence: {e}")
+                alert_processing_errors.labels(error_type=type(e).__name__).inc()
+                raise
+                
+        def _get_alert_patterns(self) -> Dict[str, Any]:
+            """Get alert patterns"""
+            try:
+                # Analyze alert history for patterns
+                patterns = {
+                    'seasonal': {},
+                    'cyclical': {},
+                    'anomalous': {},
+                    'correlated': {}
+                }
+                
+                # Simple pattern analysis
+                if len(self.alert_history) > 100:
+                    # Analyze hourly patterns
+                    hourly_counts = defaultdict(int)
+                    for alert in self.alert_history:
+                        hourly_counts[alert.starts_at.hour] += 1
+                        
+                    patterns['seasonal']['hourly'] = dict(hourly_counts)
+                    
+                    # Analyze service patterns
+                    service_counts = defaultdict(int)
+                    for alert in self.alert_history:
+                        service_counts[alert.service] += 1
+                        
+                    patterns['correlated']['services'] = dict(service_counts)
+                    
+                return {
+                    'patterns': patterns,
+                    'analysis_timestamp': datetime.now().isoformat()
+                }
+                
+            except Exception as e:
+                logger.error(f"Error getting alert patterns: {e}")
+                raise
+                
+        def _get_alert_trends(self) -> Dict[str, Any]:
+            """Get alert trends"""
+            try:
+                # Analyze alert trends over time
+                trends = {
+                    'volume': {},
+                    'severity': {},
+                    'resolution_time': {},
+                    'false_positive_rate': {}
+                }
+                
+                # Simple trend analysis
+                if len(self.alert_history) > 50:
+                    # Volume trends
+                    daily_counts = defaultdict(int)
+                    for alert in self.alert_history:
+                        daily_counts[alert.starts_at.date()] += 1
+                        
+                    trends['volume']['daily'] = {str(date): count for date, count in daily_counts.items()}
+                    
+                    # Severity trends
+                    severity_counts = defaultdict(int)
+                    for alert in self.alert_history:
+                        severity_counts[alert.severity] += 1
+                        
+                    trends['severity']['distribution'] = dict(severity_counts)
+                    
+                return {
+                    'trends': trends,
+                    'analysis_timestamp': datetime.now().isoformat()
+                }
+                
+            except Exception as e:
+                logger.error(f"Error getting alert trends: {e}")
+                raise
+                
+        def _parse_time_window(self, time_window: str) -> int:
+            """Parse time window string to seconds"""
+            if time_window.endswith('s'):
+                return int(time_window[:-1])
+            elif time_window.endswith('m'):
+                return int(time_window[:-1]) * 60
+            elif time_window.endswith('h'):
+                return int(time_window[:-1]) * 3600
+            elif time_window.endswith('d'):
+                return int(time_window[:-1]) * 86400
+            else:
+                return int(time_window)
+                
+        def run(self):
+            """Run the alert correlation service"""
+            logger.info("Starting alert correlation service...")
+            
+            # Start Prometheus metrics server
+            start_http_server(int(os.getenv('METRICS_PORT', 9090)))
+            
+            # Start Flask app
+            port = int(os.getenv('API_PORT', 8080))
+            self.app.run(host='0.0.0.0', port=port, debug=False)
+            
+    if __name__ == '__main__':
+        config_path = os.getenv('CONFIG_PATH', '/etc/alert-correlation/config.yaml')
+        service = AlertCorrelationEngine(config_path)
+        service.run()

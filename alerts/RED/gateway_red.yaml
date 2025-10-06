@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-red-alerts
+  namespace: observability
+# RED (Requests, Errors, Duration) alerting rules for the Gateway service.
+# Routes/severity are configured in Alertmanager.
+data:
+  gateway-red.yaml: |
+    groups:
+    - name: gateway-red
+      rules:
+      # High Error Rate Alert
+      - alert: ALERT_GATEWAY_HIGH_ERROR_RATE
+        expr: gateway:http_error_rate:ratio5m > 0.02
+        for: 2m
+        labels:
+          severity: critical
+          service: gateway
+          alert_type: error_rate
+        annotations:
+          summary: "Gateway high error rate detected"
+          description: "Gateway error rate is {{ $value | humanizePercentage }} for the last 5 minutes"
+          runbook_url: "https://docs.254carbon.local/runbooks/gateway-high-error-rate"
+      
+      # Latency Degradation Alert
+      - alert: ALERT_GATEWAY_LATENCY_DEGRADATION
+        expr: gateway:http_request_duration_seconds:p95 > 0.15
+        for: 5m
+        labels:
+          severity: warning
+          service: gateway
+          alert_type: latency
+        annotations:
+          summary: "Gateway latency degradation detected"
+          description: "Gateway P95 latency is {{ $value }}s (threshold: 0.15s)"
+          runbook_url: "https://docs.254carbon.local/runbooks/gateway-latency-degradation"
+      
+      # Request Rate Anomaly
+      - alert: ALERT_GATEWAY_REQUEST_RATE_ANOMALY
+        expr: |
+          (
+            gateway:http_requests:rate5m > gateway:http_requests:rate15m * 2
+            or
+            gateway:http_requests:rate5m < gateway:http_requests:rate15m * 0.5
+          )
+        for: 3m
+        labels:
+          severity: warning
+          service: gateway
+          alert_type: anomaly
+        annotations:
+          summary: "Gateway request rate anomaly detected"
+          description: "Request rate deviation detected. Current: {{ $value }} req/s"
+          runbook_url: "https://docs.254carbon.local/runbooks/gateway-request-anomaly"
+      
+      # SLO Burn Rate Alert (Fast Window)
+      - alert: ALERT_GATEWAY_SLO_BURN_RATE_FAST
+        expr: gateway:error_budget:burn_rate_fast > 4
+        for: 1m
+        labels:
+          severity: critical
+          service: gateway
+          alert_type: slo_burn
+        annotations:
+          summary: "Gateway SLO burn rate critical (fast window)"
+          description: "Error budget burn rate is {{ $value }}x normal (threshold: 4x)"
+          runbook_url: "https://docs.254carbon.local/runbooks/gateway-slo-burn"
+      
+      # SLO Burn Rate Alert (Slow Window)
+      - alert: ALERT_GATEWAY_SLO_BURN_RATE_SLOW
+        expr: gateway:error_budget:burn_rate_slow > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: gateway
+          alert_type: slo_burn
+        annotations:
+          summary: "Gateway SLO burn rate warning (slow window)"
+          description: "Error budget burn rate is {{ $value }}x normal (threshold: 1x)"
+          runbook_url: "https://docs.254carbon.local/runbooks/gateway-slo-burn"
+      
+      # Service Down Alert
+      - alert: ALERT_GATEWAY_SERVICE_DOWN
+        expr: up{job="gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: gateway
+          alert_type: availability
+        annotations:
+          summary: "Gateway service is down"
+          description: "Gateway service has been down for more than 1 minute"
+          runbook_url: "https://docs.254carbon.local/runbooks/gateway-service-down"

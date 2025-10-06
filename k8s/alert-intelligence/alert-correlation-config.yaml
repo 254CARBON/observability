@@ -1,0 +1,369 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alert-correlation-config
+  namespace: observability
+data:
+  config.yaml: |
+    # Alert Correlation and Intelligence Configuration
+    
+    # Data sources
+    data_sources:
+      prometheus:
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090"
+        query_timeout: "30s"
+        retention_period: "30d"
+        
+      alertmanager:
+        endpoint: "http://alertmanager.observability.svc.cluster.local:9093"
+        api_timeout: "10s"
+        
+      tempo:
+        endpoint: "http://tempo.observability.svc.cluster.local:3200"
+        query_timeout: "30s"
+        
+      loki:
+        endpoint: "http://loki.observability.svc.cluster.local:3100"
+        query_timeout: "30s"
+        
+    # Alert correlation settings
+    correlation:
+      # Time window for correlation analysis
+      time_window:
+        default: "5m"
+        max: "1h"
+        min: "1m"
+        
+      # Correlation algorithms
+      algorithms:
+        - name: "temporal"
+          weight: 0.3
+          enabled: true
+        - name: "spatial"
+          weight: 0.2
+          enabled: true
+        - name: "causal"
+          weight: 0.4
+          enabled: true
+        - name: "semantic"
+          weight: 0.1
+          enabled: true
+          
+      # Correlation thresholds
+      thresholds:
+        min_correlation_score: 0.5
+        max_correlation_distance: 0.8
+        min_alerts_for_correlation: 2
+        max_alerts_for_correlation: 10
+        
+      # Correlation rules
+      rules:
+        # Service dependency correlation
+        service_dependency:
+          enabled: true
+          weight: 0.8
+          time_window: "2m"
+          
+        # Resource correlation
+        resource_correlation:
+          enabled: true
+          weight: 0.6
+          time_window: "3m"
+          
+        # Error correlation
+        error_correlation:
+          enabled: true
+          weight: 0.9
+          time_window: "1m"
+          
+        # Performance correlation
+        performance_correlation:
+          enabled: true
+          weight: 0.7
+          time_window: "5m"
+          
+    # Alert deduplication
+    deduplication:
+      # Deduplication strategies
+      strategies:
+        - name: "exact_match"
+          weight: 1.0
+          enabled: true
+        - name: "fuzzy_match"
+          weight: 0.8
+          enabled: true
+        - name: "semantic_match"
+          weight: 0.6
+          enabled: true
+        - name: "temporal_match"
+          weight: 0.4
+          enabled: true
+          
+      # Deduplication thresholds
+      thresholds:
+        exact_match_threshold: 1.0
+        fuzzy_match_threshold: 0.9
+        semantic_match_threshold: 0.8
+        temporal_match_threshold: 0.7
+        
+      # Deduplication rules
+      rules:
+        # Alert name deduplication
+        alert_name:
+          enabled: true
+          weight: 0.9
+          time_window: "10m"
+          
+        # Service deduplication
+        service:
+          enabled: true
+          weight: 0.8
+          time_window: "5m"
+          
+        # Error type deduplication
+        error_type:
+          enabled: true
+          weight: 0.7
+          time_window: "3m"
+          
+        # Resource deduplication
+        resource:
+          enabled: true
+          weight: 0.6
+          time_window: "5m"
+          
+    # Alert intelligence
+    intelligence:
+      # Machine learning models
+      models:
+        # Alert pattern recognition
+        pattern_recognition:
+          enabled: true
+          model_type: "isolation_forest"
+          training_window: "7d"
+          prediction_window: "1h"
+          
+        # Alert severity prediction
+        severity_prediction:
+          enabled: true
+          model_type: "random_forest"
+          training_window: "14d"
+          prediction_window: "30m"
+          
+        # Alert impact prediction
+        impact_prediction:
+          enabled: true
+          model_type: "gradient_boosting"
+          training_window: "30d"
+          prediction_window: "1h"
+          
+        # Alert resolution time prediction
+        resolution_prediction:
+          enabled: true
+          model_type: "linear_regression"
+          training_window: "30d"
+          prediction_window: "2h"
+          
+      # Feature engineering
+      features:
+        # Temporal features
+        temporal:
+          enabled: true
+          features:
+            - "hour_of_day"
+            - "day_of_week"
+            - "time_since_last_alert"
+            - "alert_frequency"
+            
+        # Service features
+        service:
+          enabled: true
+          features:
+            - "service_name"
+            - "service_version"
+            - "service_dependencies"
+            - "service_health_score"
+            
+        # Resource features
+        resource:
+          enabled: true
+          features:
+            - "cpu_utilization"
+            - "memory_utilization"
+            - "disk_utilization"
+            - "network_utilization"
+            
+        # Error features
+        error:
+          enabled: true
+          features:
+            - "error_rate"
+            - "error_type"
+            - "error_severity"
+            - "error_frequency"
+            
+      # Model training
+      training:
+        enabled: true
+        schedule: "0 2 * * *"  # Daily at 2 AM
+        batch_size: 1000
+        learning_rate: 0.01
+        max_epochs: 100
+        early_stopping: true
+        validation_split: 0.2
+        
+    # Alert routing and escalation
+    routing:
+      # Routing rules
+      rules:
+        # Critical alerts
+        critical:
+          enabled: true
+          severity: "critical"
+          channels:
+            - "pagerduty"
+            - "slack"
+            - "email"
+          escalation_time: "5m"
+          
+        # Warning alerts
+        warning:
+          enabled: true
+          severity: "warning"
+          channels:
+            - "slack"
+            - "email"
+          escalation_time: "15m"
+          
+        # Info alerts
+        info:
+          enabled: true
+          severity: "info"
+          channels:
+            - "slack"
+          escalation_time: "1h"
+          
+      # Escalation policies
+      escalation:
+        enabled: true
+        policies:
+          - name: "immediate"
+            delay: "0m"
+            channels: ["pagerduty", "slack"]
+          - name: "delayed"
+            delay: "5m"
+            channels: ["slack", "email"]
+          - name: "scheduled"
+            delay: "15m"
+            channels: ["email"]
+            
+    # Alert analytics
+    analytics:
+      # Analytics features
+      features:
+        # Alert trends
+        trends:
+          enabled: true
+          time_windows:
+            - "1h"
+            - "24h"
+            - "7d"
+            - "30d"
+            
+        # Alert patterns
+        patterns:
+          enabled: true
+          pattern_types:
+            - "seasonal"
+            - "cyclical"
+            - "anomalous"
+            - "correlated"
+            
+        # Alert metrics
+        metrics:
+          enabled: true
+          metrics:
+            - "alert_volume"
+            - "alert_resolution_time"
+            - "alert_false_positive_rate"
+            - "alert_impact_score"
+            
+      # Reporting
+      reporting:
+        enabled: true
+        frequency: "daily"
+        formats:
+          - "json"
+          - "csv"
+          - "pdf"
+        include:
+          - "alert_summary"
+          - "correlation_analysis"
+          - "deduplication_stats"
+          - "intelligence_insights"
+          
+    # Performance optimization
+    performance:
+      # Query optimization
+      query_optimization:
+        enabled: true
+        max_query_time: "30s"
+        cache_queries: true
+        cache_duration: "5m"
+        
+      # Data processing
+      data_processing:
+        enabled: true
+        batch_size: 1000
+        processing_interval: "1m"
+        parallel_processing: true
+        max_workers: 4
+        
+      # Memory management
+      memory_management:
+        enabled: true
+        max_memory_usage: "1GB"
+        gc_threshold: "80%"
+        cache_size: "512MB"
+        
+    # Monitoring and observability
+    monitoring:
+      # Metrics collection
+      metrics:
+        enabled: true
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090"
+        metric_prefix: "alert_intelligence_"
+        
+      # Health checks
+      health_checks:
+        enabled: true
+        endpoint: "/health"
+        interval: "30s"
+        timeout: "5s"
+        
+      # Logging
+      logging:
+        enabled: true
+        level: "info"
+        format: "json"
+        output: "stdout"
+        
+    # Security
+    security:
+      # Authentication
+      authentication:
+        enabled: true
+        method: "bearer_token"
+        token_header: "Authorization"
+        
+      # Authorization
+      authorization:
+        enabled: true
+        rbac_enabled: true
+        default_role: "viewer"
+        
+      # Encryption
+      encryption:
+        enabled: true
+        algorithm: "AES-256-GCM"
+        key_rotation: "24h"

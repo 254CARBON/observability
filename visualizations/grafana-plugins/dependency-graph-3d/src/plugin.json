@@ -1,0 +1,39 @@
+{
+  "type": "panel",
+  "name": "Dependency Graph 3D",
+  "id": "dependency-graph-3d",
+  "info": {
+    "description": "3D Service Dependency Graph Visualization",
+    "author": {
+      "name": "254Carbon",
+      "url": "https://254carbon.com"
+    },
+    "keywords": ["dependency", "graph", "3d", "service", "mesh"],
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "links": [
+      {
+        "name": "Website",
+        "url": "https://254carbon.com"
+      },
+      {
+        "name": "License",
+        "url": "https://github.com/254carbon/observability/blob/main/LICENSE"
+      }
+    ],
+    "screenshots": [
+      {
+        "name": "3D Dependency Graph",
+        "path": "img/screenshot.png"
+      }
+    ],
+    "version": "1.0.0",
+    "updated": "2024-01-01"
+  },
+  "dependencies": {
+    "grafanaVersion": "9.0.0",
+    "plugins": []
+  }
+}

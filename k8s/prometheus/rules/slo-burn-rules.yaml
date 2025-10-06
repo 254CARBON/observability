@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-slo-rules
+  namespace: observability
+# SLO-oriented recording rules for availability, latency, and error budgets.
+# Burn rates use multiple windows to detect both fast and slow regressions.
+data:
+  slo-burn-rules.yaml: |
+    groups:
+    - name: slo-burn-rates
+      rules:
+      # Gateway Availability SLO (99.0% target)
+      - record: gateway:availability:slo
+        expr: (1 - (gateway:http_error_rate:ratio5m))
+        labels:
+          service: gateway
+          slo_target: "0.99"
+      
+      - record: gateway:error_budget:burn_rate_fast
+        expr: (gateway:http_error_rate:ratio5m) / (1 - 0.99)
+        labels:
+          service: gateway
+          window: "5m"
+      
+      - record: gateway:error_budget:burn_rate_slow
+        expr: (gateway:http_error_rate:ratio15m) / (1 - 0.99)
+        labels:
+          service: gateway
+          window: "15m"
+      
+      # Gateway Latency SLO (P95 < 150ms)
+      - record: gateway:latency:slo_violation_fast
+        expr: gateway:http_request_duration_seconds:p95 > 0.15
+        labels:
+          service: gateway
+          slo_target: "0.15s"
+      
+      - record: gateway:latency:slo_violation_slow
+        expr: gateway:http_request_duration_seconds:p95 > 0.15
+        labels:
+          service: gateway
+          slo_target: "0.15s"
+      
+      # Data Freshness SLO (< 2 minutes lag)
+      - record: ingestion:data_freshness:slo_violation
+        expr: (time() - ingestion_latest_processed_timestamp) > 120
+        labels:
+          service: ingestion
+          slo_target: "120s"
+      
+      # ML Inference Latency SLO (P95 < 500ms)
+      - record: ml:inference_latency:slo_violation
+        expr: ml:inference_latency:p95 > 0.5
+        labels:
+          service: ml
+          slo_target: "0.5s"
+      
+      # Error Budget Remaining
+      - record: gateway:error_budget:remaining
+        expr: max(0, 1 - (gateway:http_error_rate:ratio5m) / (1 - 0.99))
+        labels:
+          service: gateway
+          window: "5m"

@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources-pyroscope
+  namespace: observability
+data:
+  pyroscope.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Pyroscope
+        type: pyroscope
+        url: http://pyroscope.observability.svc.cluster.local:4040
+        access: proxy
+        editable: true
+        uid: pyroscope
+        jsonData:
+          httpMethod: GET
+          keepCookies: []
+          # Integration with traces
+          tracesToProfiles:
+            datasourceUid: 'tempo'
+            tags:
+              - { key: 'service.name', value: 'service' }
+              - { key: 'service.version', value: 'version' }
+            query: 'service="{{.service.name}}" and version="{{.service.version}}"'
+          # Integration with metrics
+          metricsToProfiles:
+            datasourceUid: 'prometheus'
+            tags:
+              - { key: 'service', value: 'service' }
+              - { key: 'environment', value: 'environment' }
+            query: 'service="{{.service}}" and environment="{{.environment}}"'
+          # Profile comparison
+          profileComparison:
+            enabled: true
+            maxComparisons: 5
+          # Flame graph settings
+          flameGraph:
+            enabled: true
+            showLabels: true
+            showTooltips: true
+            colorScheme: 'hot'
+          # Sampling settings
+          sampling:
+            enabled: true
+            continuousRate: 0.01
+            onDemandRate: 1.0
+          # Retention settings
+          retention:
+            enabled: true
+            maxRetentionPeriod: '7d'

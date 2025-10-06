@@ -1,0 +1,59 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: rca-recording-rules
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: recording-rules
+spec:
+  groups:
+    - name: rca.rules
+      rules:
+        # RCA analysis metrics
+        - record: rca_analyses_total:rate5m
+          expr: sum by (algorithm, status) (rate(rca_analyses_total[5m]))
+          labels:
+            component: rca-service
+        - record: rca_analysis_duration_seconds:avg_over_time
+          expr: avg_over_time(rca_analysis_duration_seconds[1h])
+          labels:
+            component: rca-service
+        - record: rca_root_causes_identified_total:rate5m
+          expr: sum by (root_cause_type) (rate(rca_root_causes_identified_total[5m]))
+          labels:
+            component: rca-service
+        
+        # RCA accuracy metrics
+        - record: rca_accuracy_percent
+          expr: (rca_correct_root_causes_total / rca_total_analyses_total) * 100
+          labels:
+            component: rca-service
+        - record: rca_false_positive_rate
+          expr: (rca_false_positives_total / rca_total_analyses_total) * 100
+          labels:
+            component: rca-service
+        - record: rca_false_negative_rate
+          expr: (rca_false_negatives_total / rca_total_analyses_total) * 100
+          labels:
+            component: rca-service
+        
+        # RCA performance metrics
+        - record: rca_analysis_queue_depth
+          expr: rca_analysis_queue_size
+          labels:
+            component: rca-service
+        - record: rca_analysis_throughput:rate5m
+          expr: sum(rate(rca_analyses_completed_total[5m]))
+          labels:
+            component: rca-service
+        
+        # RCA algorithm performance
+        - record: rca_algorithm_performance:avg_over_time
+          expr: avg_over_time(rca_algorithm_performance_score[1h])
+          labels:
+            component: rca-service
+        - record: rca_algorithm_confidence:avg_over_time
+          expr: avg_over_time(rca_algorithm_confidence_score[1h])
+          labels:
+            component: rca-service

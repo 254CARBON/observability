@@ -1,0 +1,17 @@
+# Namespaces for the observability stack. Keep names stable; many
+# ConfigMaps and RBAC bindings are keyed by these values.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    name: observability
+    purpose: observability-platform
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring
+    purpose: prometheus-operator

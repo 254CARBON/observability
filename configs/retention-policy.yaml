@@ -1,0 +1,272 @@
+# Retention Policy Configuration for 254Carbon Observability Platform
+# Defines data retention periods for different environments and signal types
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: retention-policy
+  namespace: observability
+data:
+  retention-policy.yaml: |
+    # Global retention policy
+    global:
+      # Default retention for all signals
+      default_retention: "15d"
+      
+      # Environment-specific overrides
+      environments:
+        local:
+          metrics_retention: "7d"
+          traces_retention: "2d"
+          logs_retention: "3d"
+          profiles_retention: "1d"
+        
+        staging:
+          metrics_retention: "15d"
+          traces_retention: "7d"
+          logs_retention: "7d"
+          profiles_retention: "3d"
+        
+        production:
+          metrics_retention: "90d"
+          traces_retention: "30d"
+          logs_retention: "30d"
+          profiles_retention: "7d"
+    
+    # Signal-specific retention policies
+    signals:
+      metrics:
+        # High-resolution metrics (raw)
+        high_resolution:
+          retention: "15d"
+          downsampling:
+            enabled: true
+            intervals:
+              - duration: "1h"
+                retention: "30d"
+              - duration: "1d"
+                retention: "90d"
+              - duration: "1w"
+                retention: "1y"
+        
+        # Aggregated metrics (recording rules)
+        aggregated:
+          retention: "90d"
+          downsampling:
+            enabled: true
+            intervals:
+              - duration: "1d"
+                retention: "1y"
+              - duration: "1w"
+                retention: "2y"
+        
+        # SLO metrics (critical for business)
+        slo:
+          retention: "2y"
+          downsampling:
+            enabled: false
+        
+        # Cost optimization
+        cost_optimization:
+          # Drop high-cardinality metrics after 7 days
+          high_cardinality_retention: "7d"
+          # Compress older metrics
+          compression_enabled: true
+          # Limit metric cardinality
+          max_series_per_metric: 10000
+      
+      traces:
+        # Error traces (always keep)
+        errors:
+          retention: "30d"
+          sampling: 1.0
+        
+        # Slow traces (keep for analysis)
+        slow:
+          retention: "15d"
+          sampling: 1.0
+          threshold: "2x_p95_target"
+        
+        # Normal traces (sample heavily)
+        normal:
+          retention: "7d"
+          sampling: 0.1
+        
+        # Cost optimization
+        cost_optimization:
+          # Compress trace blocks
+          compression_enabled: true
+          # Limit trace size
+          max_trace_size: "1MB"
+          # Limit spans per trace
+          max_spans_per_trace: 1000
+      
+      logs:
+        # Error logs (always keep)
+        errors:
+          retention: "30d"
+          sampling: 1.0
+        
+        # Audit logs (compliance)
+        audit:
+          retention: "7y"
+          sampling: 1.0
+        
+        # Application logs (sample)
+        application:
+          retention: "14d"
+          sampling: 0.5
+        
+        # Debug logs (minimal retention)
+        debug:
+          retention: "3d"
+          sampling: 0.1
+        
+        # Cost optimization
+        cost_optimization:
+          # Compress log chunks
+          compression_enabled: true
+          # Limit log line size
+          max_line_size: "256KB"
+          # Filter noise
+          noise_filtering: true
+      
+      profiles:
+        # Continuous profiling (on-demand)
+        continuous:
+          retention: "7d"
+          sampling: 0.01
+        
+        # Ad-hoc profiling (keep longer)
+        adhoc:
+          retention: "30d"
+          sampling: 1.0
+        
+        # Cost optimization
+        cost_optimization:
+          # Compress profile data
+          compression_enabled: true
+          # Limit profile size
+          max_profile_size: "10MB"
+    
+    # Service-specific retention policies
+    services:
+      gateway:
+        metrics_retention: "30d"
+        traces_retention: "15d"
+        logs_retention: "14d"
+        priority: "high"
+      
+      streaming:
+        metrics_retention: "30d"
+        traces_retention: "15d"
+        logs_retention: "14d"
+        priority: "high"
+      
+      ingestion:
+        metrics_retention: "60d"
+        traces_retention: "30d"
+        logs_retention: "30d"
+        priority: "medium"
+      
+      normalization:
+        metrics_retention: "60d"
+        traces_retention: "30d"
+        logs_retention: "30d"
+        priority: "medium"
+      
+      ml:
+        metrics_retention: "90d"
+        traces_retention: "60d"
+        logs_retention: "60d"
+        priority: "medium"
+      
+      infrastructure:
+        metrics_retention: "90d"
+        traces_retention: "7d"
+        logs_retention: "14d"
+        priority: "low"
+    
+    # Cost management
+    cost_management:
+      # Budget limits per environment
+      budgets:
+        local: "$100/month"
+        staging: "$500/month"
+        production: "$2000/month"
+      
+      # Alert thresholds
+      alerts:
+        - threshold: "80%"
+          severity: "warning"
+        - threshold: "95%"
+          severity: "critical"
+      
+      # Auto-cleanup policies
+      auto_cleanup:
+        enabled: true
+        schedule: "0 2 * * *"  # Daily at 2 AM
+        dry_run: false
+        backup_before_cleanup: true
+      
+      # Optimization strategies
+      optimization:
+        # Drop unused metrics
+        drop_unused_metrics: true
+        unused_threshold: "7d"
+        
+        # Compress old data
+        compress_old_data: true
+        compression_threshold: "30d"
+        
+        # Limit cardinality
+        limit_cardinality: true
+        max_labels_per_metric: 100
+        
+        # Sample high-volume data
+        sample_high_volume: true
+        volume_threshold: "1000/s"
+        sampling_rate: 0.1
+    
+    # Compliance and audit
+    compliance:
+      # Data retention for compliance
+      retention:
+        audit_logs: "7y"
+        financial_data: "7y"
+        user_data: "3y"
+        system_logs: "1y"
+      
+      # Data protection
+      protection:
+        encryption_at_rest: true
+        encryption_in_transit: true
+        access_logging: true
+        data_masking: true
+      
+      # Audit requirements
+      audit:
+        access_logging: true
+        change_logging: true
+        retention_logging: true
+        compliance_reporting: true
+    
+    # Monitoring and alerting
+    monitoring:
+      # Retention policy compliance
+      compliance:
+        enabled: true
+        check_interval: "1h"
+        alert_threshold: "95%"
+      
+      # Cost monitoring
+      cost:
+        enabled: true
+        check_interval: "1d"
+        alert_threshold: "80%"
+      
+      # Performance monitoring
+      performance:
+        enabled: true
+        check_interval: "5m"
+        alert_threshold: "2x_baseline"

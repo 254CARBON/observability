@@ -1,0 +1,111 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: predictive-analytics-alerts
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: alert-rules
+    severity: warn
+spec:
+  groups:
+    - name: predictive.analytics.alerts
+      rules:
+        - alert: PredictiveAnalyticsServiceDown
+          expr: up{app="predictive-analytics"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Predictive Analytics Service is down"
+            description: "The predictive analytics service is not running. Failure prediction and capacity forecasting will not function."
+        
+        - alert: HighFailurePredictionConfidence
+          expr: failure_prediction_confidence:avg_over_time > 0.9
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High failure prediction confidence"
+            description: "Failure prediction confidence is {{ $value }}, indicating high probability of service failure. Investigate immediately."
+        
+        - alert: CapacityExhaustionPredicted
+          expr: capacity_exhaustion_probability:avg_over_time > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Capacity exhaustion predicted"
+            description: "Capacity exhaustion probability is {{ $value }}. Consider scaling resources or optimizing usage."
+        
+        - alert: ModelAccuracyLow
+          expr: failure_prediction_accuracy:avg_over_time < 0.7
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Low model accuracy"
+            description: "Failure prediction model accuracy is {{ $value }}, below acceptable threshold. Consider retraining."
+        
+        - alert: ModelDriftDetected
+          expr: model_drift_score:avg_over_time > 0.3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Model drift detected"
+            description: "Model drift score is {{ $value }}, indicating model performance degradation. Retrain model."
+        
+        - alert: HighAnomalyDetectionRate
+          expr: anomaly_detection_rate:rate5m > 10
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High anomaly detection rate"
+            description: "Anomaly detection rate is {{ $value }} anomalies per second. Review system health."
+        
+        - alert: PredictionLatencyHigh
+          expr: failure_prediction_latency:avg_over_time > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High prediction latency"
+            description: "Failure prediction latency is {{ $value }} seconds, above acceptable threshold."
+        
+        - alert: ModelTrainingFailed
+          expr: model_training_status == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Model training failed"
+            description: "Model training has failed. Check training logs and data quality."
+        
+        - alert: ResourceOptimizationOpportunity
+          expr: resource_optimization_savings_percent > 20
+          for: 10m
+          labels:
+            severity: info
+          annotations:
+            summary: "Resource optimization opportunity"
+            description: "Resource optimization could save {{ $value }}% of current costs. Review recommendations."
+        
+        - alert: AutoScalingRecommendation
+          expr: auto_scaling_recommendations:rate5m > 0
+          for: 1m
+          labels:
+            severity: info
+          annotations:
+            summary: "Auto-scaling recommendation"
+            description: "Auto-scaling recommendations are being generated. Review scaling policies."
+        
+        - alert: PredictiveAnalyticsHealthLow
+          expr: predictive_analytics_health_score < 70
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Low predictive analytics health score"
+            description: "Predictive analytics health score is {{ $value }}, below acceptable threshold. Review system performance."

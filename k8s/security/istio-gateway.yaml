@@ -1,0 +1,190 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-system
+  labels:
+    name: istio-system
+---
+# Istio Gateway for external access to observability components
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: observability-gateway
+  namespace: observability
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        mode: SIMPLE
+        credentialName: observability-tls
+      hosts:
+        - observability.254carbon.com
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - observability.254carbon.com
+      tls:
+        httpsRedirect: true
+---
+# Virtual Service for Grafana
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: grafana-vs
+  namespace: observability
+spec:
+  hosts:
+    - observability.254carbon.com
+  gateways:
+    - observability-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /grafana
+      route:
+        - destination:
+            host: oauth2-proxy.observability.svc.cluster.local
+            port:
+              number: 4180
+      rewrite:
+        uri: /
+      headers:
+        request:
+          set:
+            X-Forwarded-Proto: https
+            X-Forwarded-Port: "443"
+    - match:
+        - uri:
+            prefix: /grafana/
+      route:
+        - destination:
+            host: grafana.observability.svc.cluster.local
+            port:
+              number: 3000
+      rewrite:
+        uri: /
+---
+# Virtual Service for Prometheus
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: prometheus-vs
+  namespace: observability
+spec:
+  hosts:
+    - observability.254carbon.com
+  gateways:
+    - observability-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /prometheus
+      route:
+        - destination:
+            host: oauth2-proxy.observability.svc.cluster.local
+            port:
+              number: 4180
+      rewrite:
+        uri: /
+      headers:
+        request:
+          set:
+            X-Forwarded-Proto: https
+            X-Forwarded-Port: "443"
+    - match:
+        - uri:
+            prefix: /prometheus/
+      route:
+        - destination:
+            host: prometheus-server.observability.svc.cluster.local
+            port:
+              number: 9090
+      rewrite:
+        uri: /
+---
+# Virtual Service for Alertmanager
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: alertmanager-vs
+  namespace: observability
+spec:
+  hosts:
+    - observability.254carbon.com
+  gateways:
+    - observability-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /alertmanager
+      route:
+        - destination:
+            host: oauth2-proxy.observability.svc.cluster.local
+            port:
+              number: 4180
+      rewrite:
+        uri: /
+      headers:
+        request:
+          set:
+            X-Forwarded-Proto: https
+            X-Forwarded-Port: "443"
+    - match:
+        - uri:
+            prefix: /alertmanager/
+      route:
+        - destination:
+            host: alertmanager.observability.svc.cluster.local
+            port:
+              number: 9093
+      rewrite:
+        uri: /
+---
+# Authorization Policy for observability namespace
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: observability-authz
+  namespace: observability
+spec:
+  selector:
+    matchLabels:
+      app: oauth2-proxy
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]
+    - to:
+        - operation:
+            methods: ["GET", "POST"]
+            paths: ["/ping", "/metrics"]
+---
+# PeerAuthentication for mTLS
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: observability-mtls
+  namespace: observability
+spec:
+  mtls:
+    mode: STRICT
+---
+# DestinationRule for mTLS
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: observability-mtls
+  namespace: observability
+spec:
+  host: "*.observability.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL

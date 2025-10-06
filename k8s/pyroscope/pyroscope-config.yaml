@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pyroscope-config
+  namespace: observability
+data:
+  pyroscope.yaml: |
+    server:
+      http_listen_address: "0.0.0.0"
+      http_listen_port: 4040
+      log_level: "info"
+      storage_path: "/var/lib/pyroscope"
+      
+    # Retention settings for cost optimization
+    retention:
+      enabled: true
+      max_retention_period: "7d"  # 7 days rolling retention
+      
+    # Sampling configuration
+    sampling:
+      enabled: true
+      continuous_sampling_rate: 0.01  # 1% continuous sampling
+      on_demand_sampling_rate: 1.0    # 100% on-demand sampling
+      
+    # Compression for storage efficiency
+    compression:
+      enabled: true
+      algorithm: "gzip"
+      level: 6
+      
+    # Performance monitoring
+    profiling:
+      cpu:
+        enabled: true
+        sampling_rate: 100  # Hz
+      memory:
+        enabled: true
+        sampling_rate: 10  # Hz
+      goroutines:
+        enabled: true
+        sampling_rate: 1  # Hz
+        
+    # Integration with existing observability stack
+    integrations:
+      prometheus:
+        enabled: true
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090"
+      grafana:
+        enabled: true
+        endpoint: "http://grafana.observability.svc.cluster.local:3000"
+      tempo:
+        enabled: true
+        endpoint: "http://tempo.observability.svc.cluster.local:3200"
+        
+    # Security
+    security:
+      auth:
+        enabled: false  # Disable for local dev, enable for production
+      tls:
+        enabled: false  # Disable for local dev, enable for production
+        
+    # Resource limits
+    limits:
+      max_cpu_usage: 0.02  # Max 2% CPU overhead
+      max_memory_usage: "512Mi"
+      max_profile_size: "10MB"

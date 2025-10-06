@@ -1,0 +1,203 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-logging-config
+  namespace: observability
+data:
+  config.yaml: |
+    # Audit Logging Configuration for 254Carbon Observability
+    # This service would collect and forward audit logs from all observability components
+    
+    # Audit log sources
+    audit_sources:
+      - name: "prometheus"
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090/api/v1/query"
+        query: 'prometheus_http_requests_total{handler!="/metrics",handler!="/health"}'
+        log_format: "json"
+        fields:
+          - "timestamp"
+          - "method"
+          - "path"
+          - "status_code"
+          - "user_agent"
+          - "remote_addr"
+      - name: "grafana"
+        endpoint: "http://grafana.observability.svc.cluster.local:3000/api/admin/logs"
+        log_format: "json"
+        fields:
+          - "timestamp"
+          - "level"
+          - "message"
+          - "user_id"
+          - "org_id"
+          - "remote_addr"
+      - name: "alertmanager"
+        endpoint: "http://alertmanager.observability.svc.cluster.local:9093/api/v2/alerts"
+        log_format: "json"
+        fields:
+          - "timestamp"
+          - "alertname"
+          - "severity"
+          - "status"
+          - "user_id"
+      - name: "tenant-manager"
+        endpoint: "http://tenant-manager.observability.svc.cluster.local:8080/api/audit"
+        log_format: "json"
+        fields:
+          - "timestamp"
+          - "tenant_id"
+          - "action"
+          - "resource"
+          - "user_id"
+          - "result"
+    
+    # Audit log processing
+    processing:
+      batch_size: 100
+      flush_interval: "30s"
+      retry_attempts: 3
+      retry_delay: "5s"
+    
+    # Audit log storage
+    storage:
+      type: "loki"
+      endpoint: "http://loki.observability.svc.cluster.local:3100/loki/api/v1/push"
+      labels:
+        component: "audit-logging"
+        environment: "production"
+      retention_days: 365
+    
+    # Audit log filtering
+    filtering:
+      exclude_patterns:
+        - "health_check"
+        - "metrics_endpoint"
+        - "ping"
+      include_patterns:
+        - "authentication"
+        - "authorization"
+        - "data_access"
+        - "configuration_change"
+    
+    # Compliance requirements
+    compliance:
+      pci_dss: true
+      sox: true
+      gdpr: true
+      hipaa: false
+      
+    # Alerting on audit events
+    alerting:
+      enabled: true
+      rules:
+        - name: "failed_authentication"
+          pattern: "authentication_failed"
+          severity: "warning"
+          threshold: 5
+          time_window: "5m"
+        - name: "privilege_escalation"
+          pattern: "privilege_escalation"
+          severity: "critical"
+          threshold: 1
+          time_window: "1m"
+        - name: "data_access_violation"
+          pattern: "unauthorized_data_access"
+          severity: "critical"
+          threshold: 1
+          time_window: "1m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-logging
+  namespace: observability
+  labels:
+    app: audit-logging
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: audit-logging
+  template:
+    metadata:
+      labels:
+        app: audit-logging
+    spec:
+      containers:
+        - name: audit-logging
+          image: busybox # Placeholder image, replace with actual service image
+          command: ["/bin/sh", "-c", "echo 'Audit Logging Service running (placeholder)'; sleep 3600"] # Placeholder command
+          ports:
+            - containerPort: 8080 # For exposing API
+            - containerPort: 9090 # For exposing metrics
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/audit-logging
+          env:
+            - name: AUDIT_CONFIG_PATH
+              value: "/etc/audit-logging/config.yaml"
+            - name: LOKI_ENDPOINT
+              value: "http://loki.observability.svc.cluster.local:3100"
+            - name: PROMETHEUS_ENDPOINT
+              value: "http://prometheus-server.observability.svc.cluster.local:9090"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: config-volume
+          configMap:
+            name: audit-logging-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-logging
+  namespace: observability
+  labels:
+    app: audit-logging
+spec:
+  type: ClusterIP
+  selector:
+    app: audit-logging
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+      name: api
+    - protocol: TCP
+      port: 9090
+      targetPort: 9090
+      name: metrics
+---
+# ServiceMonitor for audit logging metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: audit-logging
+  namespace: observability
+  labels:
+    app: audit-logging
+spec:
+  selector:
+    matchLabels:
+      app: audit-logging
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics

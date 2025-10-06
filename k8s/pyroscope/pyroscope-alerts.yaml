@@ -1,0 +1,96 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: pyroscope-profiling-alerts
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: alert-rules
+    severity: warn
+spec:
+  groups:
+    - name: pyroscope.profiling.alerts
+      rules:
+        # High profiling overhead alert
+        - alert: ALERT_PYROSCOPE_HIGH_OVERHEAD
+          expr: |
+            pyroscope:cpu_overhead_percent > 2
+          for: 5m
+          labels:
+            severity: warn
+            component: "profiling"
+          annotations:
+            summary: "High profiling overhead detected"
+            description: "Pyroscope profiling is consuming {{ $value }}% CPU overhead, exceeding the 2% threshold."
+            
+        # Profile storage usage alert
+        - alert: ALERT_PYROSCOPE_HIGH_STORAGE_USAGE
+          expr: |
+            pyroscope:storage_usage_bytes > 1073741824  # 1GB
+          for: 10m
+          labels:
+            severity: warn
+            component: "profiling"
+          annotations:
+            summary: "High profile storage usage"
+            description: "Pyroscope storage usage is {{ $value | humanizeBytes }}, approaching storage limits."
+            
+        # Profile compression failure alert
+        - alert: ALERT_PYROSCOPE_COMPRESSION_FAILURE
+          expr: |
+            pyroscope:compression_ratio > 0.9
+          for: 5m
+          labels:
+            severity: warn
+            component: "profiling"
+          annotations:
+            summary: "Profile compression ineffective"
+            description: "Profile compression ratio is {{ $value }}, indicating compression is not working effectively."
+            
+        # Profile retention inefficiency alert
+        - alert: ALERT_PYROSCOPE_RETENTION_INEFFICIENCY
+          expr: |
+            pyroscope:retention_efficiency_percent < 80
+          for: 1h
+          labels:
+            severity: warn
+            component: "profiling"
+          annotations:
+            summary: "Profile retention inefficient"
+            description: "Profile retention efficiency is {{ $value }}%, indicating old profiles are not being cleaned up effectively."
+            
+        # Profile sampling rate too low alert
+        - alert: ALERT_PYROSCOPE_LOW_SAMPLING_RATE
+          expr: |
+            pyroscope:sampling_effectiveness < 0.5
+          for: 10m
+          labels:
+            severity: warn
+            component: "profiling"
+          annotations:
+            summary: "Profile sampling rate too low"
+            description: "Profile sampling effectiveness is {{ $value }}%, indicating sampling rate may be too low for meaningful insights."
+            
+        # Profile agent connection failure alert
+        - alert: ALERT_PYROSCOPE_AGENT_DISCONNECTED
+          expr: |
+            up{job="pyroscope-agent"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: "profiling"
+          annotations:
+            summary: "Pyroscope agent disconnected"
+            description: "Pyroscope agent is not responding, profiling data collection may be interrupted."
+            
+        # Profile server high memory usage alert
+        - alert: ALERT_PYROSCOPE_SERVER_HIGH_MEMORY
+          expr: |
+            container_memory_usage_bytes{container="pyroscope"} > 429496729  # 400MB
+          for: 5m
+          labels:
+            severity: warn
+            component: "profiling"
+          annotations:
+            summary: "Pyroscope server high memory usage"
+            description: "Pyroscope server memory usage is {{ $value | humanizeBytes }}, approaching memory limits."

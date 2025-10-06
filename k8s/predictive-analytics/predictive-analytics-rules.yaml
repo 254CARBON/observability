@@ -1,0 +1,89 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: predictive-analytics-recording-rules
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: recording-rules
+spec:
+  groups:
+    - name: predictive.analytics.rules
+      rules:
+        # Failure prediction metrics
+        - record: failure_prediction_accuracy:avg_over_time
+          expr: avg_over_time(failure_prediction_accuracy[1h])
+          labels:
+            component: predictive-analytics
+        - record: failure_prediction_confidence:avg_over_time
+          expr: avg_over_time(failure_prediction_confidence[1h])
+          labels:
+            component: predictive-analytics
+        - record: failure_prediction_latency:avg_over_time
+          expr: avg_over_time(failure_prediction_latency_seconds[1h])
+          labels:
+            component: predictive-analytics
+        
+        # Capacity forecasting metrics
+        - record: capacity_forecast_accuracy:avg_over_time
+          expr: avg_over_time(capacity_forecast_accuracy[1h])
+          labels:
+            component: predictive-analytics
+        - record: capacity_forecast_horizon_hours
+          expr: capacity_forecast_horizon_seconds / 3600
+          labels:
+            component: predictive-analytics
+        - record: capacity_exhaustion_probability:avg_over_time
+          expr: avg_over_time(capacity_exhaustion_probability[1h])
+          labels:
+            component: predictive-analytics
+        
+        # Anomaly detection metrics
+        - record: anomaly_detection_rate:rate5m
+          expr: sum by (algorithm) (rate(anomalies_detected_total[5m]))
+          labels:
+            component: predictive-analytics
+        - record: anomaly_detection_precision:avg_over_time
+          expr: avg_over_time(anomaly_detection_precision[1h])
+          labels:
+            component: predictive-analytics
+        - record: anomaly_detection_recall:avg_over_time
+          expr: avg_over_time(anomaly_detection_recall[1h])
+          labels:
+            component: predictive-analytics
+        
+        # Model performance metrics
+        - record: model_training_duration:avg_over_time
+          expr: avg_over_time(model_training_duration_seconds[1h])
+          labels:
+            component: predictive-analytics
+        - record: model_prediction_throughput:rate5m
+          expr: sum(rate(model_predictions_total[5m]))
+          labels:
+            component: predictive-analytics
+        - record: model_drift_score:avg_over_time
+          expr: avg_over_time(model_drift_score[1h])
+          labels:
+            component: predictive-analytics
+        
+        # Resource optimization metrics
+        - record: resource_optimization_savings_percent
+          expr: (resource_optimization_savings / resource_optimization_baseline) * 100
+          labels:
+            component: predictive-analytics
+        - record: auto_scaling_recommendations:rate5m
+          expr: sum by (recommendation_type) (rate(auto_scaling_recommendations_total[5m]))
+          labels:
+            component: predictive-analytics
+        
+        # Predictive analytics summary
+        - record: predictive_analytics_health_score
+          expr: |
+            (
+              failure_prediction_accuracy:avg_over_time * 0.3 +
+              capacity_forecast_accuracy:avg_over_time * 0.3 +
+              anomaly_detection_precision:avg_over_time * 0.2 +
+              (1 - model_drift_score:avg_over_time) * 0.2
+            ) * 100
+          labels:
+            component: predictive-analytics

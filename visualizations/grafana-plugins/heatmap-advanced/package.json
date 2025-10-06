@@ -1,0 +1,38 @@
+{
+  "name": "heatmap-advanced",
+  "version": "1.0.0",
+  "description": "Advanced Heatmap Visualization for Grafana",
+  "main": "dist/module.js",
+  "scripts": {
+    "build": "grafana-toolkit plugin:build",
+    "test": "grafana-toolkit plugin:test",
+    "dev": "grafana-toolkit plugin:dev",
+    "watch": "grafana-toolkit plugin:dev --watch"
+  },
+  "keywords": [
+    "grafana",
+    "plugin",
+    "heatmap",
+    "visualization",
+    "advanced"
+  ],
+  "author": "254Carbon",
+  "license": "MIT",
+  "dependencies": {
+    "@grafana/data": "^9.0.0",
+    "@grafana/runtime": "^9.0.0",
+    "@grafana/ui": "^9.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "d3": "^7.0.0",
+    "d3-scale": "^4.0.0",
+    "d3-scale-chromatic": "^3.0.0"
+  },
+  "devDependencies": {
+    "@grafana/toolkit": "^9.0.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@types/d3": "^7.0.0",
+    "typescript": "^4.0.0"
+  }
+}

@@ -1,0 +1,229 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-federation-config
+  namespace: observability
+data:
+  prometheus.yml: |
+    # Prometheus Federation Configuration for High Availability
+    # This configuration enables Prometheus federation across multiple regions/clusters
+
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        region: "us-west-2"
+        cluster: "primary"
+        replica: "1"
+
+    # Rule files configuration
+    rule_files:
+      - "/etc/prometheus/rules/*.yaml"
+
+    # Scrape configuration for local targets
+    scrape_configs:
+      # Scrape local Prometheus targets
+      - job_name: 'prometheus-local'
+        static_configs:
+          - targets: ['localhost:9090']
+
+      # Scrape local Kubernetes API server
+      - job_name: 'kubernetes-apiservers'
+        kubernetes_sd_configs:
+          - role: endpoints
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: default;kubernetes;https
+
+      # Scrape local Kubernetes nodes
+      - job_name: 'kubernetes-nodes'
+        kubernetes_sd_configs:
+          - role: node
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+
+      # Scrape local Kubernetes pods
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+
+      # Scrape local Kubernetes services
+      - job_name: 'kubernetes-services'
+        kubernetes_sd_configs:
+          - role: service
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+            action: replace
+            target_label: __scheme__
+            regex: (https?)
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_service_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: kubernetes_service_name
+
+    # Federation configuration - scrape other Prometheus instances
+    scrape_configs:
+      # Federation from other regions
+      - job_name: 'federation-us-east-1'
+        honor_labels: true
+        metrics_path: '/federate'
+        params:
+          'match[]':
+            - '{job=~"kubernetes-.*"}'
+            - '{job=~"prometheus-.*"}'
+            - '{job=~"grafana-.*"}'
+            - '{job=~"tempo-.*"}'
+            - '{job=~"loki-.*"}'
+            - '{job=~"pyroscope-.*"}'
+        static_configs:
+          - targets:
+            - 'prometheus-us-east-1.observability.svc.cluster.local:9090'
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: region
+            replacement: 'us-east-1'
+
+      - job_name: 'federation-eu-west-1'
+        honor_labels: true
+        metrics_path: '/federate'
+        params:
+          'match[]':
+            - '{job=~"kubernetes-.*"}'
+            - '{job=~"prometheus-.*"}'
+            - '{job=~"grafana-.*"}'
+            - '{job=~"tempo-.*"}'
+            - '{job=~"loki-.*"}'
+            - '{job=~"pyroscope-.*"}'
+        static_configs:
+          - targets:
+            - 'prometheus-eu-west-1.observability.svc.cluster.local:9090'
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: region
+            replacement: 'eu-west-1'
+
+      # Federation from secondary clusters in same region
+      - job_name: 'federation-secondary-cluster'
+        honor_labels: true
+        metrics_path: '/federate'
+        params:
+          'match[]':
+            - '{job=~"kubernetes-.*"}'
+            - '{job=~"prometheus-.*"}'
+            - '{job=~"grafana-.*"}'
+            - '{job=~"tempo-.*"}'
+            - '{job=~"loki-.*"}'
+            - '{job=~"pyroscope-.*"}'
+        static_configs:
+          - targets:
+            - 'prometheus-secondary.observability.svc.cluster.local:9090'
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: cluster
+            replacement: 'secondary'
+
+    # Remote write configuration for cross-region data replication
+    remote_write:
+      # Write to Thanos for long-term storage and global view
+      - url: "http://thanos-receive.observability.svc.cluster.local:10908/api/v1/receive"
+        write_relabel_configs:
+          - source_labels: [__name__]
+            regex: 'up|prometheus_tsdb_.*|prometheus_config_.*'
+            action: drop
+        queue_config:
+          max_samples_per_send: 1000
+          batch_send_deadline: 5s
+          max_retries: 10
+          min_backoff: 30ms
+          max_backoff: 100ms
+
+      # Write to other regions for disaster recovery
+      - url: "http://prometheus-us-east-1.observability.svc.cluster.local:9090/api/v1/write"
+        write_relabel_configs:
+          - source_labels: [region]
+            regex: 'us-west-2'
+            action: keep
+        queue_config:
+          max_samples_per_send: 500
+          batch_send_deadline: 10s
+          max_retries: 5
+          min_backoff: 100ms
+          max_backoff: 1s
+
+    # Remote read configuration for cross-region queries
+    remote_read:
+      # Read from Thanos for historical data
+      - url: "http://thanos-query.observability.svc.cluster.local:10902/api/v1/read"
+        read_recent: true
+
+      # Read from other regions
+      - url: "http://prometheus-us-east-1.observability.svc.cluster.local:9090/api/v1/read"
+        read_recent: true
+
+    # Alerting configuration
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+              - alertmanager.observability.svc.cluster.local:9093
+              - alertmanager-us-east-1.observability.svc.cluster.local:9093
+              - alertmanager-eu-west-1.observability.svc.cluster.local:9093
+        - timeout: 10s
+        - api_version: v2
+
+    # Storage configuration for high availability
+    storage:
+      tsdb:
+        retention.time: 15d
+        retention.size: 50GB
+        wal-compression: true
+        min-block-duration: 2h
+        max-block-duration: 36h
+        head-chunks-write-queue-size: 1000

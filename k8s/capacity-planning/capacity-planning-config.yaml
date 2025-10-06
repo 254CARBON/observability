@@ -1,0 +1,246 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: capacity-planning-config
+  namespace: observability
+data:
+  config.yaml: |
+    # Capacity Planning Configuration
+    
+    # Data sources
+    data_sources:
+      prometheus:
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090"
+        query_timeout: "30s"
+        retention_period: "30d"  # Use 30 days of historical data
+        
+    # Forecasting settings
+    forecasting:
+      # Time horizons for forecasting
+      horizons:
+        - "1h"    # 1 hour ahead
+        - "6h"    # 6 hours ahead
+        - "24h"   # 1 day ahead
+        - "7d"    # 1 week ahead
+        - "30d"   # 1 month ahead
+        
+      # Forecasting algorithms
+      algorithms:
+        # Linear regression for trend analysis
+        linear_regression:
+          enabled: true
+          min_data_points: 10
+          confidence_interval: 0.95
+          
+        # Exponential smoothing for seasonal patterns
+        exponential_smoothing:
+          enabled: true
+          alpha: 0.3  # Smoothing parameter
+          beta: 0.1   # Trend parameter
+          gamma: 0.1  # Seasonal parameter
+          
+        # ARIMA for complex time series
+        arima:
+          enabled: true
+          order: [1, 1, 1]  # (p, d, q)
+          max_order: [3, 2, 3]
+          
+        # Machine learning approach
+        machine_learning:
+          enabled: true
+          model_type: "random_forest"
+          features:
+            - "cpu_usage"
+            - "memory_usage"
+            - "request_rate"
+            - "error_rate"
+            - "latency"
+            - "time_of_day"
+            - "day_of_week"
+            - "month"
+            
+    # Resource metrics to forecast
+    resources:
+      cpu:
+        enabled: true
+        query: "avg(rate(container_cpu_usage_seconds_total[5m])) by (pod)"
+        threshold_warning: 0.7   # 70% CPU usage
+        threshold_critical: 0.9  # 90% CPU usage
+        
+      memory:
+        enabled: true
+        query: "avg(container_memory_usage_bytes / container_spec_memory_limit_bytes) by (pod)"
+        threshold_warning: 0.8   # 80% memory usage
+        threshold_critical: 0.95  # 95% memory usage
+        
+      disk:
+        enabled: true
+        query: "avg(node_filesystem_usage) by (instance)"
+        threshold_warning: 0.8   # 80% disk usage
+        threshold_critical: 0.9  # 90% disk usage
+        
+      network:
+        enabled: true
+        query: "avg(rate(container_network_receive_bytes_total[5m])) by (pod)"
+        threshold_warning: 100000000  # 100MB/s
+        threshold_critical: 500000000  # 500MB/s
+        
+    # Service-specific forecasting
+    services:
+      gateway:
+        enabled: true
+        resources:
+          - "cpu"
+          - "memory"
+          - "network"
+        metrics:
+          - "request_rate"
+          - "error_rate"
+          - "latency"
+          
+      ingestion:
+        enabled: true
+        resources:
+          - "cpu"
+          - "memory"
+          - "disk"
+        metrics:
+          - "message_rate"
+          - "processing_latency"
+          - "queue_depth"
+          
+      normalization:
+        enabled: true
+        resources:
+          - "cpu"
+          - "memory"
+        metrics:
+          - "processing_rate"
+          - "error_rate"
+          - "transformation_latency"
+          
+      streaming:
+        enabled: true
+        resources:
+          - "cpu"
+          - "memory"
+          - "network"
+        metrics:
+          - "connection_count"
+          - "message_rate"
+          - "connection_latency"
+          
+    # Alerting thresholds
+    alerting:
+      # Capacity exhaustion alerts
+      capacity_exhaustion:
+        enabled: true
+        warning_threshold: 0.8   # 80% capacity
+        critical_threshold: 0.9  # 90% capacity
+        forecast_horizon: "24h"   # Alert 24 hours before exhaustion
+        
+      # Growth rate alerts
+      growth_rate:
+        enabled: true
+        warning_threshold: 0.1   # 10% growth per day
+        critical_threshold: 0.2  # 20% growth per day
+        
+      # Anomaly detection
+      anomaly_detection:
+        enabled: true
+        sensitivity: 0.05       # 5% deviation threshold
+        min_data_points: 20     # Minimum data points for anomaly detection
+        
+    # Reporting
+    reporting:
+      # Report generation
+      reports:
+        enabled: true
+        frequency: "daily"      # daily, weekly, monthly
+        formats:
+          - "json"
+          - "csv"
+          - "pdf"
+        include:
+          - "forecasts"
+          - "trends"
+          - "recommendations"
+          - "alerts"
+          
+      # Dashboard updates
+      dashboard_updates:
+        enabled: true
+        frequency: "5m"         # Update every 5 minutes
+        cache_duration: "10m"   # Cache for 10 minutes
+        
+    # Optimization recommendations
+    optimization:
+      # Resource optimization
+      resource_optimization:
+        enabled: true
+        # Right-sizing recommendations
+        right_sizing:
+          enabled: true
+          min_utilization: 0.3   # Minimum 30% utilization
+          max_utilization: 0.8   # Maximum 80% utilization
+          
+        # Scaling recommendations
+        scaling:
+          enabled: true
+          horizontal_scaling: true
+          vertical_scaling: true
+          auto_scaling: true
+          
+      # Cost optimization
+      cost_optimization:
+        enabled: true
+        # Resource cost analysis
+        cost_analysis:
+          enabled: true
+          cpu_cost_per_hour: 0.05
+          memory_cost_per_gb_hour: 0.01
+          storage_cost_per_gb_hour: 0.001
+          
+        # Savings recommendations
+        savings:
+          enabled: true
+          min_savings_threshold: 0.1  # 10% minimum savings
+          
+    # Performance optimization
+    performance:
+      # Query optimization
+      query_optimization:
+        enabled: true
+        max_query_time: "30s"
+        cache_queries: true
+        cache_duration: "5m"
+        
+      # Data processing
+      data_processing:
+        enabled: true
+        batch_size: 1000
+        processing_interval: "1m"
+        parallel_processing: true
+        max_workers: 4
+        
+    # Monitoring and observability
+    monitoring:
+      # Metrics collection
+      metrics:
+        enabled: true
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090"
+        metric_prefix: "capacity_planning_"
+        
+      # Health checks
+      health_checks:
+        enabled: true
+        endpoint: "/health"
+        interval: "30s"
+        timeout: "5s"
+        
+      # Logging
+      logging:
+        enabled: true
+        level: "info"
+        format: "json"
+        output: "stdout"

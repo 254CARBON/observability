@@ -1,0 +1,1254 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-alerting
+  namespace: observability
+  labels:
+    app: ml-alerting
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ml-alerting
+  template:
+    metadata:
+      labels:
+        app: ml-alerting
+    spec:
+      containers:
+        - name: ml-alerting
+          image: python:3.11-slim
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              pip install prometheus-client pandas numpy scikit-learn flask gunicorn requests redis tensorflow torch &&
+              python /app/ml_alerting.py
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 9090
+              name: metrics
+          env:
+            - name: CONFIG_PATH
+              value: "/etc/ml-alerting/config.yaml"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: METRICS_PORT
+              value: "9090"
+            - name: API_PORT
+              value: "8080"
+            - name: REDIS_URL
+              value: "redis://redis.observability.svc.cluster.local:6379"
+            - name: MODEL_STORAGE_PATH
+              value: "/var/lib/ml-alerting/models"
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/ml-alerting
+            - name: app-volume
+              mountPath: /app
+            - name: model-storage
+              mountPath: /var/lib/ml-alerting
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: config-volume
+          configMap:
+            name: ml-alerting-config
+        - name: app-volume
+          configMap:
+            name: ml-alerting-app
+        - name: model-storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-alerting
+  namespace: observability
+  labels:
+    app: ml-alerting
+spec:
+  type: ClusterIP
+  selector:
+    app: ml-alerting
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ml-alerting-app
+  namespace: observability
+data:
+  ml_alerting.py: |
+    import os
+    import yaml
+    import json
+    import time
+    import logging
+    import threading
+    import pickle
+    import joblib
+    from datetime import datetime, timedelta
+    from typing import Dict, List, Any, Optional, Tuple
+    from dataclasses import dataclass, asdict
+    from flask import Flask, jsonify, request
+    from prometheus_client import Counter, Histogram, Gauge, start_http_server
+    import requests
+    import pandas as pd
+    import numpy as np
+    from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, IsolationForest
+    from sklearn.linear_model import LinearRegression
+    from sklearn.preprocessing import StandardScaler, LabelEncoder
+    from sklearn.model_selection import train_test_split, cross_val_score
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, mean_absolute_error, mean_squared_error
+    import redis
+    from collections import defaultdict, deque
+    import asyncio
+    import aiohttp
+    import schedule
+    import threading
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    
+    # Prometheus metrics
+    ml_prediction_accuracy = Gauge('ml_alerting_prediction_accuracy', 'ML prediction accuracy', ['model_type', 'prediction_type'])
+    ml_prediction_latency = Histogram('ml_alerting_prediction_latency_seconds', 'ML prediction latency', ['model_type'])
+    ml_model_drift = Gauge('ml_alerting_model_drift', 'ML model drift score', ['model_type'])
+    ml_feature_importance = Gauge('ml_alerting_feature_importance', 'ML feature importance', ['model_type', 'feature'])
+    ml_prediction_confidence = Gauge('ml_alerting_prediction_confidence', 'ML prediction confidence', ['model_type', 'prediction_type'])
+    ml_training_duration = Histogram('ml_alerting_training_duration_seconds', 'ML model training duration', ['model_type'])
+    ml_training_errors = Counter('ml_alerting_training_errors_total', 'ML training errors', ['model_type', 'error_type'])
+    
+    @dataclass
+    class MLModel:
+        """ML model data structure"""
+        name: str
+        model_type: str
+        model: Any
+        scaler: Any
+        encoder: Any
+        features: List[str]
+        performance_metrics: Dict[str, float]
+        last_trained: datetime
+        version: str
+        
+    @dataclass
+    class PredictionRequest:
+        """Prediction request structure"""
+        model_type: str
+        features: Dict[str, float]
+        timestamp: datetime
+        context: Dict[str, Any]
+        
+    @dataclass
+    class PredictionResponse:
+        """Prediction response structure"""
+        prediction: Any
+        confidence: float
+        model_type: str
+        features_used: List[str]
+        timestamp: datetime
+        reasoning: str
+        
+    class MLAlertingEngine:
+        """Main ML alerting engine"""
+        
+        def __init__(self, config_path: str):
+            self.config = self._load_config(config_path)
+            self.prometheus_endpoint = self.config['data_sources']['prometheus']['endpoint']
+            self.alertmanager_endpoint = self.config['data_sources']['alertmanager']['endpoint']
+            self.tempo_endpoint = self.config['data_sources']['tempo']['endpoint']
+            self.loki_endpoint = self.config['data_sources']['loki']['endpoint']
+            
+            # Initialize Redis for caching
+            self.redis_client = redis.Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379'))
+            
+            # Initialize ML models
+            self.models: Dict[str, MLModel] = {}
+            self.model_storage_path = os.getenv('MODEL_STORAGE_PATH', '/var/lib/ml-alerting/models')
+            
+            # Initialize Flask app
+            self.app = Flask(__name__)
+            self._setup_routes()
+            
+            # Training scheduler
+            self.training_scheduler = threading.Thread(target=self._run_training_scheduler, daemon=True)
+            self.training_scheduler.start()
+            
+        def _load_config(self, config_path: str) -> Dict[str, Any]:
+            """Load configuration from YAML file"""
+            try:
+                with open(config_path, 'r') as f:
+                    return yaml.safe_load(f)
+            except Exception as e:
+                logger.error(f"Failed to load config: {e}")
+                raise
+                
+        def _setup_routes(self):
+            """Setup Flask routes"""
+            
+            @self.app.route('/health')
+            def health():
+                return jsonify({"status": "healthy"})
+                
+            @self.app.route('/ready')
+            def ready():
+                return jsonify({"status": "ready"})
+                
+            @self.app.route('/api/v1/predict/alert', methods=['POST'])
+            def predict_alert():
+                """Predict alert occurrence"""
+                try:
+                    data = request.get_json()
+                    prediction_request = PredictionRequest(**data)
+                    
+                    result = self._predict_alert(prediction_request)
+                    return jsonify(asdict(result))
+                    
+                except Exception as e:
+                    logger.error(f"Error predicting alert: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.app.route('/api/v1/predict/severity', methods=['POST'])
+            def predict_severity():
+                """Predict alert severity"""
+                try:
+                    data = request.get_json()
+                    prediction_request = PredictionRequest(**data)
+                    
+                    result = self._predict_severity(prediction_request)
+                    return jsonify(asdict(result))
+                    
+                except Exception as e:
+                    logger.error(f"Error predicting severity: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.app.route('/api/v1/predict/impact', methods=['POST'])
+            def predict_impact():
+                """Predict alert impact"""
+                try:
+                    data = request.get_json()
+                    prediction_request = PredictionRequest(**data)
+                    
+                    result = self._predict_impact(prediction_request)
+                    return jsonify(asdict(result))
+                    
+                except Exception as e:
+                    logger.error(f"Error predicting impact: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.route('/api/v1/predict/resolution', methods=['POST'])
+            def predict_resolution():
+                """Predict alert resolution time"""
+                try:
+                    data = request.get_json()
+                    prediction_request = PredictionRequest(**data)
+                    
+                    result = self._predict_resolution(prediction_request)
+                    return jsonify(asdict(result))
+                    
+                except Exception as e:
+                    logger.error(f"Error predicting resolution: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.app.route('/api/v1/predict/anomaly', methods=['POST'])
+            def predict_anomaly():
+                """Predict anomalies"""
+                try:
+                    data = request.get_json()
+                    prediction_request = PredictionRequest(**data)
+                    
+                    result = self._predict_anomaly(prediction_request)
+                    return jsonify(asdict(result))
+                    
+                except Exception as e:
+                    logger.error(f"Error predicting anomaly: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.app.route('/api/v1/models/train', methods=['POST'])
+            def train_models():
+                """Train ML models"""
+                try:
+                    data = request.get_json()
+                    model_types = data.get('model_types', ['all'])
+                    
+                    result = self._train_models(model_types)
+                    return jsonify(result)
+                    
+                except Exception as e:
+                    logger.error(f"Error training models: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.app.route('/api/v1/models/status', methods=['GET'])
+            def get_model_status():
+                """Get model status"""
+                try:
+                    status = self._get_model_status()
+                    return jsonify(status)
+                    
+                except Exception as e:
+                    logger.error(f"Error getting model status: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+            @self.app.route('/api/v1/models/performance', methods=['GET'])
+            def get_model_performance():
+                """Get model performance metrics"""
+                try:
+                    performance = self._get_model_performance()
+                    return jsonify(performance)
+                    
+                except Exception as e:
+                    logger.error(f"Error getting model performance: {e}")
+                    return jsonify({"error": str(e)}), 500
+                    
+        def _query_prometheus(self, query: str, start_time: datetime, end_time: datetime) -> List[Dict]:
+            """Query Prometheus for metrics"""
+            try:
+                params = {
+                    'query': query,
+                    'start': start_time.timestamp(),
+                    'end': end_time.timestamp(),
+                    'step': '1m'
+                }
+                
+                response = requests.get(
+                    f"{self.prometheus_endpoint}/api/v1/query_range",
+                    params=params,
+                    timeout=30
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                if data['status'] == 'success':
+                    return data['data']['result']
+                else:
+                    raise Exception(f"Prometheus query failed: {data.get('error', 'Unknown error')}")
+                    
+            except Exception as e:
+                logger.error(f"Prometheus query error: {e}")
+                ml_training_errors.labels(model_type="unknown", error_type=type(e).__name__).inc()
+                raise
+                
+        def _query_alertmanager(self, endpoint: str) -> Dict[str, Any]:
+            """Query Alertmanager for alerts"""
+            try:
+                response = requests.get(
+                    f"{self.alertmanager_endpoint}/api/v1/{endpoint}",
+                    timeout=10
+                )
+                response.raise_for_status()
+                return response.json()
+                
+            except Exception as e:
+                logger.error(f"Alertmanager query error: {e}")
+                ml_training_errors.labels(model_type="unknown", error_type=type(e).__name__).inc()
+                raise
+                
+        def _extract_features(self, data: Dict[str, Any]) -> np.ndarray:
+            """Extract features from data"""
+            features = []
+            
+            # Temporal features
+            if self.config['feature_engineering']['temporal']['enabled']:
+                now = datetime.now()
+                features.extend([
+                    now.hour,
+                    now.weekday(),
+                    now.month,
+                    1 if now.weekday() >= 5 else 0,  # is_weekend
+                    0,  # is_holiday (placeholder)
+                    data.get('time_since_last_alert', 0),
+                    data.get('alert_frequency', 0)
+                ])
+                
+            # Service features
+            if self.config['feature_engineering']['service']['enabled']:
+                features.extend([
+                    hash(data.get('service_name', '')) % 1000,
+                    hash(data.get('service_version', '')) % 1000,
+                    len(data.get('service_dependencies', [])),
+                    data.get('service_health_score', 0.5),
+                    data.get('service_criticality', 0.5)
+                ])
+                
+            # Resource features
+            if self.config['feature_engineering']['resource']['enabled']:
+                features.extend([
+                    data.get('cpu_utilization', 0.5),
+                    data.get('memory_utilization', 0.5),
+                    data.get('disk_utilization', 0.5),
+                    data.get('network_utilization', 0.5)
+                ])
+                
+            # Error features
+            if self.config['feature_engineering']['error']['enabled']:
+                features.extend([
+                    data.get('error_rate', 0.0),
+                    hash(data.get('error_type', '')) % 1000,
+                    data.get('error_severity', 0.5),
+                    data.get('error_frequency', 0.0)
+                ])
+                
+            # Performance features
+            if self.config['feature_engineering']['performance']['enabled']:
+                features.extend([
+                    data.get('latency', 0.0),
+                    data.get('throughput', 0.0),
+                    data.get('response_time', 0.0),
+                    data.get('queue_length', 0.0)
+                ])
+                
+            return np.array(features)
+            
+        def _predict_alert(self, request: PredictionRequest) -> PredictionResponse:
+            """Predict alert occurrence"""
+            start_time = time.time()
+            
+            try:
+                model_name = "alert_prediction"
+                if model_name not in self.models:
+                    return PredictionResponse(
+                        prediction=False,
+                        confidence=0.0,
+                        model_type=model_name,
+                        features_used=[],
+                        timestamp=datetime.now(),
+                        reasoning="Model not available"
+                    )
+                    
+                model = self.models[model_name]
+                
+                # Extract features
+                features = self._extract_features(request.features)
+                features = features.reshape(1, -1)
+                
+                # Scale features
+                if model.scaler:
+                    features = model.scaler.transform(features)
+                    
+                # Make prediction
+                prediction = model.model.predict(features)[0]
+                prediction_proba = model.model.predict_proba(features)[0]
+                confidence = np.max(prediction_proba)
+                
+                # Update Prometheus metrics
+                ml_prediction_accuracy.labels(
+                    model_type=model_name,
+                    prediction_type="alert"
+                ).set(confidence)
+                
+                ml_prediction_latency.labels(model_type=model_name).observe(time.time() - start_time)
+                
+                ml_prediction_confidence.labels(
+                    model_type=model_name,
+                    prediction_type="alert"
+                ).set(confidence)
+                
+                return PredictionResponse(
+                    prediction=bool(prediction),
+                    confidence=float(confidence),
+                    model_type=model_name,
+                    features_used=model.features,
+                    timestamp=datetime.now(),
+                    reasoning=f"Alert prediction with {confidence:.2f} confidence"
+                )
+                
+            except Exception as e:
+                logger.error(f"Error predicting alert: {e}")
+                ml_training_errors.labels(model_type="alert_prediction", error_type=type(e).__name__).inc()
+                raise
+                
+        def _predict_severity(self, request: PredictionRequest) -> PredictionResponse:
+            """Predict alert severity"""
+            start_time = time.time()
+            
+            try:
+                model_name = "severity_prediction"
+                if model_name not in self.models:
+                    return PredictionResponse(
+                        prediction="unknown",
+                        confidence=0.0,
+                        model_type=model_name,
+                        features_used=[],
+                        timestamp=datetime.now(),
+                        reasoning="Model not available"
+                    )
+                    
+                model = self.models[model_name]
+                
+                # Extract features
+                features = self._extract_features(request.features)
+                features = features.reshape(1, -1)
+                
+                # Scale features
+                if model.scaler:
+                    features = model.scaler.transform(features)
+                    
+                # Make prediction
+                prediction = model.model.predict(features)[0]
+                prediction_proba = model.model.predict_proba(features)[0]
+                confidence = np.max(prediction_proba)
+                
+                # Update Prometheus metrics
+                ml_prediction_accuracy.labels(
+                    model_type=model_name,
+                    prediction_type="severity"
+                ).set(confidence)
+                
+                ml_prediction_latency.labels(model_type=model_name).observe(time.time() - start_time)
+                
+                ml_prediction_confidence.labels(
+                    model_type=model_name,
+                    prediction_type="severity"
+                ).set(confidence)
+                
+                return PredictionResponse(
+                    prediction=str(prediction),
+                    confidence=float(confidence),
+                    model_type=model_name,
+                    features_used=model.features,
+                    timestamp=datetime.now(),
+                    reasoning=f"Severity prediction with {confidence:.2f} confidence"
+                )
+                
+            except Exception as e:
+                logger.error(f"Error predicting severity: {e}")
+                ml_training_errors.labels(model_type="severity_prediction", error_type=type(e).__name__).inc()
+                raise
+                
+        def _predict_impact(self, request: PredictionRequest) -> PredictionResponse:
+            """Predict alert impact"""
+            start_time = time.time()
+            
+            try:
+                model_name = "impact_prediction"
+                if model_name not in self.models:
+                    return PredictionResponse(
+                        prediction="unknown",
+                        confidence=0.0,
+                        model_type=model_name,
+                        features_used=[],
+                        timestamp=datetime.now(),
+                        reasoning="Model not available"
+                    )
+                    
+                model = self.models[model_name]
+                
+                # Extract features
+                features = self._extract_features(request.features)
+                features = features.reshape(1, -1)
+                
+                # Scale features
+                if model.scaler:
+                    features = model.scaler.transform(features)
+                    
+                # Make prediction
+                prediction = model.model.predict(features)[0]
+                prediction_proba = model.model.predict_proba(features)[0]
+                confidence = np.max(prediction_proba)
+                
+                # Update Prometheus metrics
+                ml_prediction_accuracy.labels(
+                    model_type=model_name,
+                    prediction_type="impact"
+                ).set(confidence)
+                
+                ml_prediction_latency.labels(model_type=model_name).observe(time.time() - start_time)
+                
+                ml_prediction_confidence.labels(
+                    model_type=model_name,
+                    prediction_type="impact"
+                ).set(confidence)
+                
+                return PredictionResponse(
+                    prediction=str(prediction),
+                    confidence=float(confidence),
+                    model_type=model_name,
+                    features_used=model.features,
+                    timestamp=datetime.now(),
+                    reasoning=f"Impact prediction with {confidence:.2f} confidence"
+                )
+                
+            except Exception as e:
+                logger.error(f"Error predicting impact: {e}")
+                ml_training_errors.labels(model_type="impact_prediction", error_type=type(e).__name__).inc()
+                raise
+                
+        def _predict_resolution(self, request: PredictionRequest) -> PredictionResponse:
+            """Predict alert resolution time"""
+            start_time = time.time()
+            
+            try:
+                model_name = "resolution_prediction"
+                if model_name not in self.models:
+                    return PredictionResponse(
+                        prediction=0.0,
+                        confidence=0.0,
+                        model_type=model_name,
+                        features_used=[],
+                        timestamp=datetime.now(),
+                        reasoning="Model not available"
+                    )
+                    
+                model = self.models[model_name]
+                
+                # Extract features
+                features = self._extract_features(request.features)
+                features = features.reshape(1, -1)
+                
+                # Scale features
+                if model.scaler:
+                    features = model.scaler.transform(features)
+                    
+                # Make prediction
+                prediction = model.model.predict(features)[0]
+                
+                # Calculate confidence (simplified)
+                confidence = 0.8  # Placeholder
+                
+                # Update Prometheus metrics
+                ml_prediction_accuracy.labels(
+                    model_type=model_name,
+                    prediction_type="resolution"
+                ).set(confidence)
+                
+                ml_prediction_latency.labels(model_type=model_name).observe(time.time() - start_time)
+                
+                ml_prediction_confidence.labels(
+                    model_type=model_name,
+                    prediction_type="resolution"
+                ).set(confidence)
+                
+                return PredictionResponse(
+                    prediction=float(prediction),
+                    confidence=float(confidence),
+                    model_type=model_name,
+                    features_used=model.features,
+                    timestamp=datetime.now(),
+                    reasoning=f"Resolution time prediction with {confidence:.2f} confidence"
+                )
+                
+            except Exception as e:
+                logger.error(f"Error predicting resolution: {e}")
+                ml_training_errors.labels(model_type="resolution_prediction", error_type=type(e).__name__).inc()
+                raise
+                
+        def _predict_anomaly(self, request: PredictionRequest) -> PredictionResponse:
+            """Predict anomalies"""
+            start_time = time.time()
+            
+            try:
+                model_name = "anomaly_detection"
+                if model_name not in self.models:
+                    return PredictionResponse(
+                        prediction=False,
+                        confidence=0.0,
+                        model_type=model_name,
+                        features_used=[],
+                        timestamp=datetime.now(),
+                        reasoning="Model not available"
+                    )
+                    
+                model = self.models[model_name]
+                
+                # Extract features
+                features = self._extract_features(request.features)
+                features = features.reshape(1, -1)
+                
+                # Scale features
+                if model.scaler:
+                    features = model.scaler.transform(features)
+                    
+                # Make prediction
+                prediction = model.model.predict(features)[0]
+                anomaly_score = model.model.decision_function(features)[0]
+                confidence = abs(anomaly_score)
+                
+                # Update Prometheus metrics
+                ml_prediction_accuracy.labels(
+                    model_type=model_name,
+                    prediction_type="anomaly"
+                ).set(confidence)
+                
+                ml_prediction_latency.labels(model_type=model_name).observe(time.time() - start_time)
+                
+                ml_prediction_confidence.labels(
+                    model_type=model_name,
+                    prediction_type="anomaly"
+                ).set(confidence)
+                
+                return PredictionResponse(
+                    prediction=bool(prediction == -1),  # -1 indicates anomaly
+                    confidence=float(confidence),
+                    model_type=model_name,
+                    features_used=model.features,
+                    timestamp=datetime.now(),
+                    reasoning=f"Anomaly detection with {confidence:.2f} confidence"
+                )
+                
+            except Exception as e:
+                logger.error(f"Error predicting anomaly: {e}")
+                ml_training_errors.labels(model_type="anomaly_detection", error_type=type(e).__name__).inc()
+                raise
+                
+        def _train_models(self, model_types: List[str]) -> Dict[str, Any]:
+            """Train ML models"""
+            start_time = time.time()
+            
+            try:
+                results = {}
+                
+                if 'all' in model_types or 'alert_prediction' in model_types:
+                    results['alert_prediction'] = self._train_alert_prediction_model()
+                    
+                if 'all' in model_types or 'severity_prediction' in model_types:
+                    results['severity_prediction'] = self._train_severity_prediction_model()
+                    
+                if 'all' in model_types or 'impact_prediction' in model_types:
+                    results['impact_prediction'] = self._train_impact_prediction_model()
+                    
+                if 'all' in model_types or 'resolution_prediction' in model_types:
+                    results['resolution_prediction'] = self._train_resolution_prediction_model()
+                    
+                if 'all' in model_types or 'anomaly_detection' in model_types:
+                    results['anomaly_detection'] = self._train_anomaly_detection_model()
+                    
+                # Update training duration
+                ml_training_duration.labels(model_type="all").observe(time.time() - start_time)
+                
+                return {
+                    'training_results': results,
+                    'training_duration': time.time() - start_time,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+            except Exception as e:
+                logger.error(f"Error training models: {e}")
+                ml_training_errors.labels(model_type="all", error_type=type(e).__name__).inc()
+                raise
+                
+        def _train_alert_prediction_model(self) -> Dict[str, Any]:
+            """Train alert prediction model"""
+            start_time = time.time()
+            
+            try:
+                # Generate synthetic training data
+                X, y = self._generate_synthetic_training_data('alert_prediction')
+                
+                # Split data
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
+                
+                # Initialize model
+                model = RandomForestClassifier(
+                    n_estimators=100,
+                    max_depth=10,
+                    min_samples_split=5,
+                    min_samples_leaf=2,
+                    random_state=42
+                )
+                
+                # Train model
+                model.fit(X_train, y_train)
+                
+                # Evaluate model
+                y_pred = model.predict(X_test)
+                accuracy = accuracy_score(y_test, y_pred)
+                precision = precision_score(y_test, y_pred)
+                recall = recall_score(y_test, y_pred)
+                f1 = f1_score(y_test, y_pred)
+                
+                # Create scaler
+                scaler = StandardScaler()
+                scaler.fit(X_train)
+                
+                # Create ML model object
+                ml_model = MLModel(
+                    name="alert_prediction",
+                    model_type="random_forest",
+                    model=model,
+                    scaler=scaler,
+                    encoder=None,
+                    features=[f"feature_{i}" for i in range(X.shape[1])],
+                    performance_metrics={
+                        'accuracy': accuracy,
+                        'precision': precision,
+                        'recall': recall,
+                        'f1_score': f1
+                    },
+                    last_trained=datetime.now(),
+                    version="1.0.0"
+                )
+                
+                # Store model
+                self.models["alert_prediction"] = ml_model
+                self._save_model(ml_model)
+                
+                # Update Prometheus metrics
+                ml_training_duration.labels(model_type="alert_prediction").observe(time.time() - start_time)
+                
+                return {
+                    'model_type': 'alert_prediction',
+                    'performance_metrics': ml_model.performance_metrics,
+                    'training_duration': time.time() - start_time,
+                    'status': 'success'
+                }
+                
+            except Exception as e:
+                logger.error(f"Error training alert prediction model: {e}")
+                ml_training_errors.labels(model_type="alert_prediction", error_type=type(e).__name__).inc()
+                raise
+                
+        def _train_severity_prediction_model(self) -> Dict[str, Any]:
+            """Train severity prediction model"""
+            start_time = time.time()
+            
+            try:
+                # Generate synthetic training data
+                X, y = self._generate_synthetic_training_data('severity_prediction')
+                
+                # Split data
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
+                
+                # Initialize model
+                model = GradientBoostingClassifier(
+                    n_estimators=200,
+                    learning_rate=0.1,
+                    max_depth=6,
+                    subsample=0.8,
+                    random_state=42
+                )
+                
+                # Train model
+                model.fit(X_train, y_train)
+                
+                # Evaluate model
+                y_pred = model.predict(X_test)
+                accuracy = accuracy_score(y_test, y_pred)
+                precision = precision_score(y_test, y_pred, average='weighted')
+                recall = recall_score(y_test, y_pred, average='weighted')
+                f1 = f1_score(y_test, y_pred, average='weighted')
+                
+                # Create scaler
+                scaler = StandardScaler()
+                scaler.fit(X_train)
+                
+                # Create ML model object
+                ml_model = MLModel(
+                    name="severity_prediction",
+                    model_type="gradient_boosting",
+                    model=model,
+                    scaler=scaler,
+                    encoder=None,
+                    features=[f"feature_{i}" for i in range(X.shape[1])],
+                    performance_metrics={
+                        'accuracy': accuracy,
+                        'precision': precision,
+                        'recall': recall,
+                        'f1_score': f1
+                    },
+                    last_trained=datetime.now(),
+                    version="1.0.0"
+                )
+                
+                # Store model
+                self.models["severity_prediction"] = ml_model
+                self._save_model(ml_model)
+                
+                # Update Prometheus metrics
+                ml_training_duration.labels(model_type="severity_prediction").observe(time.time() - start_time)
+                
+                return {
+                    'model_type': 'severity_prediction',
+                    'performance_metrics': ml_model.performance_metrics,
+                    'training_duration': time.time() - start_time,
+                    'status': 'success'
+                }
+                
+            except Exception as e:
+                logger.error(f"Error training severity prediction model: {e}")
+                ml_training_errors.labels(model_type="severity_prediction", error_type=type(e).__name__).inc()
+                raise
+                
+        def _train_impact_prediction_model(self) -> Dict[str, Any]:
+            """Train impact prediction model"""
+            start_time = time.time()
+            
+            try:
+                # Generate synthetic training data
+                X, y = self._generate_synthetic_training_data('impact_prediction')
+                
+                # Split data
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
+                
+                # Initialize model
+                model = RandomForestClassifier(
+                    n_estimators=100,
+                    max_depth=10,
+                    random_state=42
+                )
+                
+                # Train model
+                model.fit(X_train, y_train)
+                
+                # Evaluate model
+                y_pred = model.predict(X_test)
+                accuracy = accuracy_score(y_test, y_pred)
+                precision = precision_score(y_test, y_pred, average='weighted')
+                recall = recall_score(y_test, y_pred, average='weighted')
+                f1 = f1_score(y_test, y_pred, average='weighted')
+                
+                # Create scaler
+                scaler = StandardScaler()
+                scaler.fit(X_train)
+                
+                # Create ML model object
+                ml_model = MLModel(
+                    name="impact_prediction",
+                    model_type="random_forest",
+                    model=model,
+                    scaler=scaler,
+                    encoder=None,
+                    features=[f"feature_{i}" for i in range(X.shape[1])],
+                    performance_metrics={
+                        'accuracy': accuracy,
+                        'precision': precision,
+                        'recall': recall,
+                        'f1_score': f1
+                    },
+                    last_trained=datetime.now(),
+                    version="1.0.0"
+                )
+                
+                # Store model
+                self.models["impact_prediction"] = ml_model
+                self._save_model(ml_model)
+                
+                # Update Prometheus metrics
+                ml_training_duration.labels(model_type="impact_prediction").observe(time.time() - start_time)
+                
+                return {
+                    'model_type': 'impact_prediction',
+                    'performance_metrics': ml_model.performance_metrics,
+                    'training_duration': time.time() - start_time,
+                    'status': 'success'
+                }
+                
+            except Exception as e:
+                logger.error(f"Error training impact prediction model: {e}")
+                ml_training_errors.labels(model_type="impact_prediction", error_type=type(e).__name__).inc()
+                raise
+                
+        def _train_resolution_prediction_model(self) -> Dict[str, Any]:
+            """Train resolution prediction model"""
+            start_time = time.time()
+            
+            try:
+                # Generate synthetic training data
+                X, y = self._generate_synthetic_training_data('resolution_prediction')
+                
+                # Split data
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
+                
+                # Initialize model
+                model = LinearRegression()
+                
+                # Train model
+                model.fit(X_train, y_train)
+                
+                # Evaluate model
+                y_pred = model.predict(X_test)
+                mae = mean_absolute_error(y_test, y_pred)
+                rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                
+                # Create scaler
+                scaler = StandardScaler()
+                scaler.fit(X_train)
+                
+                # Create ML model object
+                ml_model = MLModel(
+                    name="resolution_prediction",
+                    model_type="linear_regression",
+                    model=model,
+                    scaler=scaler,
+                    encoder=None,
+                    features=[f"feature_{i}" for i in range(X.shape[1])],
+                    performance_metrics={
+                        'mae': mae,
+                        'rmse': rmse
+                    },
+                    last_trained=datetime.now(),
+                    version="1.0.0"
+                )
+                
+                # Store model
+                self.models["resolution_prediction"] = ml_model
+                self._save_model(ml_model)
+                
+                # Update Prometheus metrics
+                ml_training_duration.labels(model_type="resolution_prediction").observe(time.time() - start_time)
+                
+                return {
+                    'model_type': 'resolution_prediction',
+                    'performance_metrics': ml_model.performance_metrics,
+                    'training_duration': time.time() - start_time,
+                    'status': 'success'
+                }
+                
+            except Exception as e:
+                logger.error(f"Error training resolution prediction model: {e}")
+                ml_training_errors.labels(model_type="resolution_prediction", error_type=type(e).__name__).inc()
+                raise
+                
+        def _train_anomaly_detection_model(self) -> Dict[str, Any]:
+            """Train anomaly detection model"""
+            start_time = time.time()
+            
+            try:
+                # Generate synthetic training data
+                X, y = self._generate_synthetic_training_data('anomaly_detection')
+                
+                # Split data
+                X_train, X_test, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
+                
+                # Initialize model
+                model = IsolationForest(
+                    contamination=0.1,
+                    random_state=42
+                )
+                
+                # Train model
+                model.fit(X_train)
+                
+                # Evaluate model
+                y_pred = model.predict(X_test)
+                accuracy = accuracy_score(y_test, y_pred)
+                
+                # Create scaler
+                scaler = StandardScaler()
+                scaler.fit(X_train)
+                
+                # Create ML model object
+                ml_model = MLModel(
+                    name="anomaly_detection",
+                    model_type="isolation_forest",
+                    model=model,
+                    scaler=scaler,
+                    encoder=None,
+                    features=[f"feature_{i}" for i in range(X.shape[1])],
+                    performance_metrics={
+                        'accuracy': accuracy
+                    },
+                    last_trained=datetime.now(),
+                    version="1.0.0"
+                )
+                
+                # Store model
+                self.models["anomaly_detection"] = ml_model
+                self._save_model(ml_model)
+                
+                # Update Prometheus metrics
+                ml_training_duration.labels(model_type="anomaly_detection").observe(time.time() - start_time)
+                
+                return {
+                    'model_type': 'anomaly_detection',
+                    'performance_metrics': ml_model.performance_metrics,
+                    'training_duration': time.time() - start_time,
+                    'status': 'success'
+                }
+                
+            except Exception as e:
+                logger.error(f"Error training anomaly detection model: {e}")
+                ml_training_errors.labels(model_type="anomaly_detection", error_type=type(e).__name__).inc()
+                raise
+                
+        def _generate_synthetic_training_data(self, model_type: str) -> Tuple[np.ndarray, np.ndarray]:
+            """Generate synthetic training data"""
+            np.random.seed(42)
+            
+            # Generate features
+            n_samples = 1000
+            n_features = 20
+            
+            X = np.random.randn(n_samples, n_features)
+            
+            # Generate labels based on model type
+            if model_type == 'alert_prediction':
+                y = (X[:, 0] + X[:, 1] + np.random.randn(n_samples) * 0.1) > 0
+                y = y.astype(int)
+            elif model_type == 'severity_prediction':
+                y = np.random.choice(['critical', 'warning', 'info'], n_samples)
+            elif model_type == 'impact_prediction':
+                y = np.random.choice(['high', 'medium', 'low'], n_samples)
+            elif model_type == 'resolution_prediction':
+                y = np.random.exponential(2.0, n_samples)
+            elif model_type == 'anomaly_detection':
+                y = np.random.choice([1, -1], n_samples, p=[0.9, 0.1])
+            else:
+                y = np.random.randint(0, 2, n_samples)
+                
+            return X, y
+            
+        def _save_model(self, model: MLModel):
+            """Save model to disk"""
+            try:
+                os.makedirs(self.model_storage_path, exist_ok=True)
+                model_path = os.path.join(self.model_storage_path, f"{model.name}.pkl")
+                
+                with open(model_path, 'wb') as f:
+                    pickle.dump(model, f)
+                    
+                logger.info(f"Model {model.name} saved to {model_path}")
+                
+            except Exception as e:
+                logger.error(f"Error saving model {model.name}: {e}")
+                
+        def _load_model(self, model_name: str) -> Optional[MLModel]:
+            """Load model from disk"""
+            try:
+                model_path = os.path.join(self.model_storage_path, f"{model_name}.pkl")
+                
+                if os.path.exists(model_path):
+                    with open(model_path, 'rb') as f:
+                        model = pickle.load(f)
+                    logger.info(f"Model {model_name} loaded from {model_path}")
+                    return model
+                else:
+                    logger.warning(f"Model {model_name} not found at {model_path}")
+                    return None
+                    
+            except Exception as e:
+                logger.error(f"Error loading model {model_name}: {e}")
+                return None
+                
+        def _get_model_status(self) -> Dict[str, Any]:
+            """Get model status"""
+            try:
+                status = {}
+                
+                for model_name, model in self.models.items():
+                    status[model_name] = {
+                        'model_type': model.model_type,
+                        'version': model.version,
+                        'last_trained': model.last_trained.isoformat(),
+                        'performance_metrics': model.performance_metrics,
+                        'features_count': len(model.features),
+                        'status': 'loaded'
+                    }
+                    
+                return {
+                    'models': status,
+                    'total_models': len(self.models),
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+            except Exception as e:
+                logger.error(f"Error getting model status: {e}")
+                raise
+                
+        def _get_model_performance(self) -> Dict[str, Any]:
+            """Get model performance metrics"""
+            try:
+                performance = {}
+                
+                for model_name, model in self.models.items():
+                    performance[model_name] = {
+                        'model_type': model.model_type,
+                        'performance_metrics': model.performance_metrics,
+                        'last_trained': model.last_trained.isoformat(),
+                        'features': model.features
+                    }
+                    
+                return {
+                    'performance': performance,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+            except Exception as e:
+                logger.error(f"Error getting model performance: {e}")
+                raise
+                
+        def _run_training_scheduler(self):
+            """Run training scheduler"""
+            try:
+                # Schedule daily training at 2 AM
+                schedule.every().day.at("02:00").do(self._train_models, ['all'])
+                
+                while True:
+                    schedule.run_pending()
+                    time.sleep(60)
+                    
+            except Exception as e:
+                logger.error(f"Error in training scheduler: {e}")
+                
+        def run(self):
+            """Run the ML alerting service"""
+            logger.info("Starting ML alerting service...")
+            
+            # Load existing models
+            self._load_existing_models()
+            
+            # Start Prometheus metrics server
+            start_http_server(int(os.getenv('METRICS_PORT', 9090)))
+            
+            # Start Flask app
+            port = int(os.getenv('API_PORT', 8080))
+            self.app.run(host='0.0.0.0', port=port, debug=False)
+            
+        def _load_existing_models(self):
+            """Load existing models from disk"""
+            model_names = ['alert_prediction', 'severity_prediction', 'impact_prediction', 'resolution_prediction', 'anomaly_detection']
+            
+            for model_name in model_names:
+                model = self._load_model(model_name)
+                if model:
+                    self.models[model_name] = model
+                    logger.info(f"Loaded model: {model_name}")
+                else:
+                    logger.info(f"Model not found: {model_name}")
+                    
+    if __name__ == '__main__':
+        config_path = os.getenv('CONFIG_PATH', '/etc/ml-alerting/config.yaml')
+        service = MLAlertingEngine(config_path)
+        service.run()

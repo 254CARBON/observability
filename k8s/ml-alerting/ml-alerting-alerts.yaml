@@ -1,0 +1,514 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ml-alerting-alerts
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: alert-rules
+    severity: page
+spec:
+  groups:
+    - name: ml.alerting.alerts
+      rules:
+        # ML model health alerts
+        - alert: MLAlertingModelHealthScoreLow
+          expr: ml_alerting_model_health_score < ml_alerting_model_health_threshold
+          for: 5m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model health score is low"
+            description: "ML model health score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingModelHealthScoreCritical
+          expr: ml_alerting_model_health_score < 0.5
+          for: 2m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model health score is critical"
+            description: "ML model health score is {{ $value | printf \"%.2f\" }}, indicating severe issues"
+            
+        # ML model performance alerts
+        - alert: MLAlertingModelPerformanceScoreLow
+          expr: ml_alerting_model_performance_score < ml_alerting_model_performance_threshold
+          for: 5m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model performance score is low"
+            description: "ML model performance score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingHighPredictionLatency
+          expr: ml_alerting_prediction_latency:p95 > 5.0
+          for: 5m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model high prediction latency"
+            description: "ML model P95 prediction latency is {{ $value }}s, above threshold of 5s"
+            
+        - alert: MLAlertingExtremePredictionLatency
+          expr: ml_alerting_prediction_latency:p99 > 10.0
+          for: 2m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model extreme prediction latency"
+            description: "ML model P99 prediction latency is {{ $value }}s, above threshold of 10s"
+            
+        # ML model accuracy alerts
+        - alert: MLAlertingLowPredictionAccuracy
+          expr: ml_alerting_prediction_accuracy:avg < 0.7
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model low prediction accuracy"
+            description: "ML model average prediction accuracy is {{ $value | printf \"%.2f\" }}, below threshold of 0.7"
+            
+        - alert: MLAlertingCriticalPredictionAccuracy
+          expr: ml_alerting_prediction_accuracy:avg < 0.5
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model critical prediction accuracy"
+            description: "ML model average prediction accuracy is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.5"
+            
+        # ML model drift alerts
+        - alert: MLAlertingModelDriftDetected
+          expr: ml_alerting_model_drift:avg > 0.1
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model drift detected"
+            description: "ML model drift score is {{ $value | printf \"%.2f\" }}, above threshold of 0.1"
+            
+        - alert: MLAlertingSevereModelDrift
+          expr: ml_alerting_model_drift:avg > 0.3
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model severe drift detected"
+            description: "ML model drift score is {{ $value | printf \"%.2f\" }}, above critical threshold of 0.3"
+            
+        # ML model confidence alerts
+        - alert: MLAlertingLowPredictionConfidence
+          expr: ml_alerting_prediction_confidence:avg < 0.6
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model low prediction confidence"
+            description: "ML model average prediction confidence is {{ $value | printf \"%.2f\" }}, below threshold of 0.6"
+            
+        - alert: MLAlertingCriticalPredictionConfidence
+          expr: ml_alerting_prediction_confidence:avg < 0.4
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model critical prediction confidence"
+            description: "ML model average prediction confidence is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.4"
+            
+        # ML model efficiency alerts
+        - alert: MLAlertingModelEfficiencyScoreLow
+          expr: ml_alerting_model_efficiency_score < ml_alerting_model_efficiency_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model efficiency score is low"
+            description: "ML model efficiency score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingModelEfficiencyScoreCritical
+          expr: ml_alerting_model_efficiency_score < 5.0
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model efficiency score is critical"
+            description: "ML model efficiency score is {{ $value | printf \"%.2f\" }}, below critical threshold of 5.0"
+            
+        # ML model reliability alerts
+        - alert: MLAlertingModelReliabilityScoreLow
+          expr: ml_alerting_model_reliability_score < ml_alerting_model_reliability_threshold
+          for: 5m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model reliability score is low"
+            description: "ML model reliability score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingModelReliabilityScoreCritical
+          expr: ml_alerting_model_reliability_score < 0.7
+          for: 2m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model reliability score is critical"
+            description: "ML model reliability score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.7"
+            
+        # ML model scalability alerts
+        - alert: MLAlertingModelScalabilityScoreLow
+          expr: ml_alerting_model_scalability_score < ml_alerting_model_scalability_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model scalability score is low"
+            description: "ML model scalability score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingModelScalabilityScoreCritical
+          expr: ml_alerting_model_scalability_score < 0.5
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model scalability score is critical"
+            description: "ML model scalability score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.5"
+            
+        # ML model quality alerts
+        - alert: MLAlertingModelQualityScoreLow
+          expr: ml_alerting_model_quality_score < ml_alerting_model_quality_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model quality score is low"
+            description: "ML model quality score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingModelQualityScoreCritical
+          expr: ml_alerting_model_quality_score < 0.5
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model quality score is critical"
+            description: "ML model quality score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.5"
+            
+        # ML model accuracy alerts
+        - alert: MLAlertingModelAccuracyScoreLow
+          expr: ml_alerting_model_accuracy_score < ml_alerting_model_accuracy_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model accuracy score is low"
+            description: "ML model accuracy score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingModelAccuracyScoreCritical
+          expr: ml_alerting_model_accuracy_score < 0.6
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model accuracy score is critical"
+            description: "ML model accuracy score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.6"
+            
+        # ML model precision alerts
+        - alert: MLAlertingModelPrecisionScoreLow
+          expr: ml_alerting_model_precision_score < ml_alerting_model_precision_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model precision score is low"
+            description: "ML model precision score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingModelPrecisionScoreCritical
+          expr: ml_alerting_model_precision_score < 0.7
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model precision score is critical"
+            description: "ML model precision score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.7"
+            
+        # ML model recall alerts
+        - alert: MLAlertingModelRecallScoreLow
+          expr: ml_alerting_model_recall_score < ml_alerting_model_recall_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model recall score is low"
+            description: "ML model recall score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingModelRecallScoreCritical
+          expr: ml_alerting_model_recall_score < 0.7
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model recall score is critical"
+            description: "ML model recall score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.7"
+            
+        # ML model F1 score alerts
+        - alert: MLAlertingModelF1ScoreLow
+          expr: ml_alerting_model_f1_score < ml_alerting_model_f1_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model F1 score is low"
+            description: "ML model F1 score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingModelF1ScoreCritical
+          expr: ml_alerting_model_f1_score < 0.6
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model F1 score is critical"
+            description: "ML model F1 score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.6"
+            
+        # ML model AUC alerts
+        - alert: MLAlertingModelAUCScoreLow
+          expr: ml_alerting_model_auc_score < ml_alerting_model_auc_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model AUC score is low"
+            description: "ML model AUC score is {{ $value | printf \"%.2f\" }}, below threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingModelAUCScoreCritical
+          expr: ml_alerting_model_auc_score < 0.6
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model AUC score is critical"
+            description: "ML model AUC score is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.6"
+            
+        # ML model MAE alerts
+        - alert: MLAlertingModelMAEScoreHigh
+          expr: ml_alerting_model_mae_score > ml_alerting_model_mae_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model MAE score is high"
+            description: "ML model MAE score is {{ $value | printf \"%.2f\" }}, above threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingModelMAEScoreCritical
+          expr: ml_alerting_model_mae_score > 0.5
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model MAE score is critical"
+            description: "ML model MAE score is {{ $value | printf \"%.2f\" }}, above critical threshold of 0.5"
+            
+        # ML model RMSE alerts
+        - alert: MLAlertingModelRMSEScoreHigh
+          expr: ml_alerting_model_rmse_score > ml_alerting_model_rmse_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model RMSE score is high"
+            description: "ML model RMSE score is {{ $value | printf \"%.2f\" }}, above threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingModelRMSEScoreCritical
+          expr: ml_alerting_model_rmse_score > 0.5
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model RMSE score is critical"
+            description: "ML model RMSE score is {{ $value | printf \"%.2f\" }}, above critical threshold of 0.5"
+            
+        # ML model MAPE alerts
+        - alert: MLAlertingModelMAPEScoreHigh
+          expr: ml_alerting_model_mape_score > ml_alerting_model_mape_threshold
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model MAPE score is high"
+            description: "ML model MAPE score is {{ $value | printf \"%.2f\" }}, above threshold of {{ $labels.threshold }}"
+            
+        - alert: MLAlertingModelMAPEScoreCritical
+          expr: ml_alerting_model_mape_score > 0.2
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model MAPE score is critical"
+            description: "ML model MAPE score is {{ $value | printf \"%.2f\" }}, above critical threshold of 0.2"
+            
+        # ML model training alerts
+        - alert: MLAlertingTrainingErrorsHigh
+          expr: ml_alerting_training_errors:rate5m > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model training errors are high"
+            description: "ML model training error rate is {{ $value | humanizePercentage }}, above threshold of 10%"
+            
+        - alert: MLAlertingTrainingErrorsCritical
+          expr: ml_alerting_training_errors:rate5m > 0.5
+          for: 2m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model training errors are critical"
+            description: "ML model training error rate is {{ $value | humanizePercentage }}, above critical threshold of 50%"
+            
+        - alert: MLAlertingTrainingDurationHigh
+          expr: ml_alerting_training_duration:p95 > 3600
+          for: 10m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model training duration is high"
+            description: "ML model P95 training duration is {{ $value }}s, above threshold of 1 hour"
+            
+        - alert: MLAlertingTrainingDurationCritical
+          expr: ml_alerting_training_duration:p99 > 7200
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model training duration is critical"
+            description: "ML model P99 training duration is {{ $value }}s, above critical threshold of 2 hours"
+            
+        # ML model service health alerts
+        - alert: MLAlertingServiceDown
+          expr: up{job="ml-alerting"} == 0
+          for: 1m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML alerting service is down"
+            description: "ML alerting service has been down for more than 1 minute"
+            
+        - alert: MLAlertingServiceHighLatency
+          expr: ml_alerting_prediction_latency:avg > 10.0
+          for: 5m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML alerting service high latency"
+            description: "ML alerting service average prediction latency is {{ $value }}s, above threshold of 10s"
+            
+        - alert: MLAlertingServiceHighErrorRate
+          expr: rate(ml_alerting_training_errors_total[5m]) > 0.2
+          for: 5m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML alerting service high error rate"
+            description: "ML alerting service error rate is {{ $value | humanizePercentage }}, above threshold of 20%"
+            
+        # ML model data quality alerts
+        - alert: MLAlertingDataStale
+          expr: time() - ml_alerting_prediction_accuracy:avg > 300
+          for: 5m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML alerting data is stale"
+            description: "ML alerting data is {{ $value }}s old, above threshold of 5 minutes"
+            
+        - alert: MLAlertingDataMissing
+          expr: absent(ml_alerting_prediction_accuracy:avg)
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML alerting data is missing"
+            description: "ML alerting data has been missing for more than 5 minutes"
+            
+        # ML model feature importance alerts
+        - alert: MLAlertingFeatureImportanceLow
+          expr: ml_alerting_feature_importance:max < 0.1
+          for: 15m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML model feature importance is low"
+            description: "ML model maximum feature importance is {{ $value | printf \"%.2f\" }}, below threshold of 0.1"
+            
+        - alert: MLAlertingFeatureImportanceCritical
+          expr: ml_alerting_feature_importance:max < 0.05
+          for: 5m
+          labels:
+            severity: page
+            category: ml-alerting
+          annotations:
+            summary: "ML model feature importance is critical"
+            description: "ML model maximum feature importance is {{ $value | printf \"%.2f\" }}, below critical threshold of 0.05"
+            
+        # ML model resource utilization alerts
+        - alert: MLAlertingHighMemoryUsage
+          expr: process_resident_memory_bytes{job="ml-alerting"} > 2000000000
+          for: 5m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML alerting high memory usage"
+            description: "ML alerting memory usage is {{ $value | humanizeBytes }}, above threshold of 2GB"
+            
+        - alert: MLAlertingHighCPUUsage
+          expr: rate(process_cpu_seconds_total{job="ml-alerting"}[5m]) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            category: ml-alerting
+          annotations:
+            summary: "ML alerting high CPU usage"
+            description: "ML alerting CPU usage is {{ $value | humanizePercentage }}, above threshold of 80%"

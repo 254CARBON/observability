@@ -1,0 +1,241 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cost-analytics-config
+  namespace: observability
+data:
+  config.yaml: |
+    # Cost Analytics Configuration
+    
+    # Data sources
+    data_sources:
+      prometheus:
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090"
+        query_timeout: "30s"
+        retention_period: "90d"  # Use 90 days of historical data
+        
+    # Cost models
+    cost_models:
+      # Infrastructure costs
+      infrastructure:
+        cpu:
+          cost_per_core_hour: 0.05
+          cost_per_core_month: 36.0
+          unit: "cores"
+          
+        memory:
+          cost_per_gb_hour: 0.01
+          cost_per_gb_month: 7.2
+          unit: "GB"
+          
+        storage:
+          cost_per_gb_hour: 0.001
+          cost_per_gb_month: 0.72
+          unit: "GB"
+          
+        network:
+          cost_per_gb: 0.01
+          unit: "GB"
+          
+      # Service costs
+      services:
+        gateway:
+          base_cost_per_hour: 0.10
+          scaling_factor: 1.0
+          
+        ingestion:
+          base_cost_per_hour: 0.15
+          scaling_factor: 1.2
+          
+        normalization:
+          base_cost_per_hour: 0.08
+          scaling_factor: 0.8
+          
+        streaming:
+          base_cost_per_hour: 0.12
+          scaling_factor: 1.1
+          
+      # Observability costs
+      observability:
+        prometheus:
+          cost_per_metric_hour: 0.0001
+          cost_per_series_hour: 0.001
+          
+        grafana:
+          cost_per_dashboard_hour: 0.01
+          cost_per_user_hour: 0.005
+          
+        tempo:
+          cost_per_trace_hour: 0.0001
+          cost_per_span_hour: 0.00001
+          
+        loki:
+          cost_per_log_line: 0.000001
+          cost_per_gb_hour: 0.02
+          
+        pyroscope:
+          cost_per_profile_hour: 0.0001
+          cost_per_sample_hour: 0.000001
+          
+    # Cost attribution
+    attribution:
+      # Service-level attribution
+      service_level:
+        enabled: true
+        granularity: "hourly"
+        include_infrastructure: true
+        include_observability: true
+        
+      # Tenant-level attribution
+      tenant_level:
+        enabled: true
+        granularity: "daily"
+        tenant_identification:
+          - "tenant_id"
+          - "customer_id"
+          - "organization_id"
+          
+      # Resource-level attribution
+      resource_level:
+        enabled: true
+        granularity: "hourly"
+        resources:
+          - "cpu"
+          - "memory"
+          - "storage"
+          - "network"
+          
+    # Cost optimization
+    optimization:
+      # Right-sizing recommendations
+      right_sizing:
+        enabled: true
+        min_utilization_threshold: 0.3
+        max_utilization_threshold: 0.8
+        savings_threshold: 0.1  # 10% minimum savings
+        
+      # Reserved instance recommendations
+      reserved_instances:
+        enabled: true
+        commitment_periods:
+          - "1year"
+          - "3year"
+        discount_rates:
+          "1year": 0.3
+          "3year": 0.5
+          
+      # Spot instance recommendations
+      spot_instances:
+        enabled: true
+        max_interruption_rate: 0.1
+        discount_rate: 0.7
+        
+      # Auto-scaling recommendations
+      auto_scaling:
+        enabled: true
+        scale_up_threshold: 0.7
+        scale_down_threshold: 0.3
+        cooldown_period: "5m"
+        
+    # Cost reporting
+    reporting:
+      # Report generation
+      reports:
+        enabled: true
+        frequency: "daily"
+        formats:
+          - "json"
+          - "csv"
+          - "pdf"
+        include:
+          - "cost_breakdown"
+          - "trends"
+          - "recommendations"
+          - "savings"
+          
+      # Dashboard updates
+      dashboard_updates:
+        enabled: true
+        frequency: "5m"
+        cache_duration: "10m"
+        
+      # Alerting
+      alerting:
+        enabled: true
+        cost_thresholds:
+          daily: 100.0
+          weekly: 700.0
+          monthly: 3000.0
+        growth_thresholds:
+          daily: 0.2  # 20% daily growth
+          weekly: 0.5  # 50% weekly growth
+          
+    # Cost analysis
+    analysis:
+      # Trend analysis
+      trends:
+        enabled: true
+        time_windows:
+          - "7d"
+          - "30d"
+          - "90d"
+        analysis_types:
+          - "linear_regression"
+          - "seasonal_decomposition"
+          - "anomaly_detection"
+          
+      # Cost efficiency metrics
+      efficiency:
+        enabled: true
+        metrics:
+          - "cost_per_request"
+          - "cost_per_user"
+          - "cost_per_gb_processed"
+          - "cost_per_transaction"
+          
+      # Cost allocation
+      allocation:
+        enabled: true
+        methods:
+          - "proportional"
+          - "activity_based"
+          - "resource_based"
+          
+    # Performance optimization
+    performance:
+      # Query optimization
+      query_optimization:
+        enabled: true
+        max_query_time: "30s"
+        cache_queries: true
+        cache_duration: "5m"
+        
+      # Data processing
+      data_processing:
+        enabled: true
+        batch_size: 1000
+        processing_interval: "1m"
+        parallel_processing: true
+        max_workers: 4
+        
+    # Monitoring and observability
+    monitoring:
+      # Metrics collection
+      metrics:
+        enabled: true
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090"
+        metric_prefix: "cost_analytics_"
+        
+      # Health checks
+      health_checks:
+        enabled: true
+        endpoint: "/health"
+        interval: "30s"
+        timeout: "5s"
+        
+      # Logging
+      logging:
+        enabled: true
+        level: "info"
+        format: "json"
+        output: "stdout"

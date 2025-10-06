@@ -1,0 +1,594 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dependency-graph
+  namespace: observability
+  labels:
+    app: dependency-graph
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dependency-graph
+  template:
+    metadata:
+      labels:
+        app: dependency-graph
+    spec:
+      containers:
+        - name: dependency-graph
+          image: python:3.11-slim
+          command: ["python", "/app/dependency_graph.py"]
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: metrics
+              containerPort: 9090
+          env:
+            - name: CONFIG_FILE
+              value: "/etc/dependency-graph/config.yaml"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 200m
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/dependency-graph
+            - name: app-volume
+              mountPath: /app
+            - name: data-volume
+              mountPath: /var/lib/dependency-graph
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: config-volume
+          configMap:
+            name: dependency-graph-config
+        - name: app-volume
+          configMap:
+            name: dependency-graph-app
+        - name: data-volume
+          emptyDir: {} # For local dev, use PVC for production
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dependency-graph
+  namespace: observability
+  labels:
+    app: dependency-graph
+spec:
+  type: ClusterIP
+  selector:
+    app: dependency-graph
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dependency-graph-app
+  namespace: observability
+data:
+  dependency_graph.py: |
+    #!/usr/bin/env python3
+    """
+    Service Dependency Graph Generator
+    
+    This service analyzes traces from Tempo to automatically generate
+    service dependency graphs and identify critical paths and bottlenecks.
+    """
+    
+    import asyncio
+    import json
+    import logging
+    import time
+    from datetime import datetime, timedelta
+    from typing import Dict, List, Any, Optional, Set, Tuple
+    from dataclasses import dataclass, asdict
+    from collections import defaultdict, Counter
+    import yaml
+    import requests
+    from fastapi import FastAPI, HTTPException
+    from fastapi.responses import JSONResponse
+    import uvicorn
+    
+    # Configure logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    
+    @dataclass
+    class ServiceNode:
+        """Service node in the dependency graph."""
+        name: str
+        service_type: str
+        call_count: int
+        error_count: int
+        avg_latency: float
+        health_score: float
+        dependencies: List[str]
+        dependents: List[str]
+        
+    @dataclass
+    class ServiceEdge:
+        """Service edge in the dependency graph."""
+        source: str
+        target: str
+        call_count: int
+        error_count: int
+        avg_latency: float
+        error_rate: float
+        
+    @dataclass
+    class DependencyGraph:
+        """Complete dependency graph."""
+        nodes: Dict[str, ServiceNode]
+        edges: Dict[Tuple[str, str], ServiceEdge]
+        critical_paths: List[List[str]]
+        bottlenecks: List[str]
+        generated_at: datetime
+        
+    class DependencyGraphGenerator:
+        """Generates service dependency graphs from trace data."""
+        
+        def __init__(self, config: Dict[str, Any]):
+            self.config = config
+            self.tempo_endpoint = config['data_sources']['tempo']['endpoint']
+            self.prometheus_endpoint = config['data_sources']['prometheus']['endpoint']
+            self.cache = {}
+            self.cache_expiry = {}
+            
+        async def generate_graph(self, time_window: str = "1h") -> DependencyGraph:
+            """Generate dependency graph from trace data."""
+            logger.info(f"Generating dependency graph for time window: {time_window}")
+            
+            # Check cache first
+            cache_key = f"graph_{time_window}"
+            if self._is_cache_valid(cache_key):
+                logger.info("Returning cached dependency graph")
+                return self.cache[cache_key]
+            
+            # Fetch traces from Tempo
+            traces = await self._fetch_traces(time_window)
+            if not traces:
+                logger.warning("No traces found for the specified time window")
+                return self._create_empty_graph()
+            
+            # Analyze traces to build dependency graph
+            nodes, edges = await self._analyze_traces(traces)
+            
+            # Identify critical paths and bottlenecks
+            critical_paths = self._find_critical_paths(nodes, edges)
+            bottlenecks = self._identify_bottlenecks(nodes, edges)
+            
+            # Create dependency graph
+            graph = DependencyGraph(
+                nodes=nodes,
+                edges=edges,
+                critical_paths=critical_paths,
+                bottlenecks=bottlenecks,
+                generated_at=datetime.now()
+            )
+            
+            # Cache the result
+            self._cache_result(cache_key, graph)
+            
+            logger.info(f"Generated dependency graph with {len(nodes)} nodes and {len(edges)} edges")
+            return graph
+            
+        async def _fetch_traces(self, time_window: str) -> List[Dict[str, Any]]:
+            """Fetch traces from Tempo."""
+            try:
+                # Calculate time range
+                end_time = datetime.now()
+                start_time = end_time - timedelta(hours=1)  # Default to 1 hour
+                
+                if time_window.endswith('h'):
+                    hours = int(time_window[:-1])
+                    start_time = end_time - timedelta(hours=hours)
+                elif time_window.endswith('m'):
+                    minutes = int(time_window[:-1])
+                    start_time = end_time - timedelta(minutes=minutes)
+                
+                # Query Tempo for traces
+                query_params = {
+                    'start': start_time.isoformat(),
+                    'end': end_time.isoformat(),
+                    'limit': self.config['data_sources']['tempo']['max_traces']
+                }
+                
+                response = requests.get(
+                    f"{self.tempo_endpoint}/api/v1/search",
+                    params=query_params,
+                    timeout=30
+                )
+                response.raise_for_status()
+                
+                traces_data = response.json()
+                traces = traces_data.get('traces', [])
+                
+                logger.info(f"Fetched {len(traces)} traces from Tempo")
+                return traces
+                
+            except Exception as e:
+                logger.error(f"Failed to fetch traces from Tempo: {e}")
+                return []
+                
+        async def _analyze_traces(self, traces: List[Dict[str, Any]]) -> Tuple[Dict[str, ServiceNode], Dict[Tuple[str, str], ServiceEdge]]:
+            """Analyze traces to build dependency graph."""
+            nodes = {}
+            edges = {}
+            
+            # Service statistics
+            service_stats = defaultdict(lambda: {
+                'call_count': 0,
+                'error_count': 0,
+                'total_latency': 0,
+                'dependencies': set(),
+                'dependents': set()
+            })
+            
+            # Edge statistics
+            edge_stats = defaultdict(lambda: {
+                'call_count': 0,
+                'error_count': 0,
+                'total_latency': 0
+            })
+            
+            for trace in traces:
+                spans = trace.get('spans', [])
+                
+                for span in spans:
+                    service_name = span.get('process', {}).get('serviceName', 'unknown')
+                    operation_name = span.get('operationName', 'unknown')
+                    
+                    # Skip if service doesn't match include patterns
+                    if not self._should_include_service(service_name):
+                        continue
+                    
+                    # Update service statistics
+                    service_stats[service_name]['call_count'] += 1
+                    
+                    if span.get('tags', {}).get('error', False):
+                        service_stats[service_name]['error_count'] += 1
+                    
+                    duration = span.get('duration', 0) / 1000  # Convert to seconds
+                    service_stats[service_name]['total_latency'] += duration
+                    
+                    # Analyze dependencies
+                    for reference in span.get('references', []):
+                        if reference.get('refType') == 'CHILD_OF':
+                            parent_span_id = reference.get('spanID')
+                            # Find parent span
+                            parent_span = next(
+                                (s for s in spans if s.get('spanID') == parent_span_id),
+                                None
+                            )
+                            if parent_span:
+                                parent_service = parent_span.get('process', {}).get('serviceName', 'unknown')
+                                if parent_service != service_name and self._should_include_service(parent_service):
+                                    service_stats[service_name]['dependencies'].add(parent_service)
+                                    service_stats[parent_service]['dependents'].add(service_name)
+                                    
+                                    # Update edge statistics
+                                    edge_key = (parent_service, service_name)
+                                    edge_stats[edge_key]['call_count'] += 1
+                                    if span.get('tags', {}).get('error', False):
+                                        edge_stats[edge_key]['error_count'] += 1
+                                    edge_stats[edge_key]['total_latency'] += duration
+            
+            # Create nodes
+            for service_name, stats in service_stats.items():
+                if stats['call_count'] < self.config['graph_generation']['min_trace_count']:
+                    continue
+                    
+                avg_latency = stats['total_latency'] / stats['call_count'] if stats['call_count'] > 0 else 0
+                error_rate = stats['error_count'] / stats['call_count'] if stats['call_count'] > 0 else 0
+                health_score = self._calculate_health_score(stats['call_count'], error_rate, avg_latency)
+                
+                nodes[service_name] = ServiceNode(
+                    name=service_name,
+                    service_type=self._determine_service_type(service_name),
+                    call_count=stats['call_count'],
+                    error_count=stats['error_count'],
+                    avg_latency=avg_latency,
+                    health_score=health_score,
+                    dependencies=list(stats['dependencies']),
+                    dependents=list(stats['dependents'])
+                )
+            
+            # Create edges
+            for (source, target), stats in edge_stats.items():
+                if source in nodes and target in nodes:
+                    avg_latency = stats['total_latency'] / stats['call_count'] if stats['call_count'] > 0 else 0
+                    error_rate = stats['error_count'] / stats['call_count'] if stats['call_count'] > 0 else 0
+                    
+                    edges[(source, target)] = ServiceEdge(
+                        source=source,
+                        target=target,
+                        call_count=stats['call_count'],
+                        error_count=stats['error_count'],
+                        avg_latency=avg_latency,
+                        error_rate=error_rate
+                    )
+            
+            return nodes, edges
+            
+        def _should_include_service(self, service_name: str) -> bool:
+            """Check if service should be included in the graph."""
+            include_patterns = self.config['service_discovery']['include_patterns']
+            exclude_patterns = self.config['service_discovery']['exclude_patterns']
+            
+            # Check exclude patterns first
+            for pattern in exclude_patterns:
+                if pattern.replace('*', '') in service_name:
+                    return False
+            
+            # Check include patterns
+            for pattern in include_patterns:
+                if pattern.replace('*', '') in service_name:
+                    return True
+            
+            return False
+            
+        def _determine_service_type(self, service_name: str) -> str:
+            """Determine service type based on name."""
+            if 'gateway' in service_name.lower():
+                return 'gateway'
+            elif 'ingestion' in service_name.lower():
+                return 'ingestion'
+            elif 'normalization' in service_name.lower():
+                return 'normalization'
+            elif 'streaming' in service_name.lower():
+                return 'streaming'
+            elif 'database' in service_name.lower():
+                return 'database'
+            elif 'cache' in service_name.lower():
+                return 'cache'
+            else:
+                return 'service'
+                
+        def _calculate_health_score(self, call_count: int, error_rate: float, avg_latency: float) -> float:
+            """Calculate health score for a service."""
+            # Base score
+            score = 100.0
+            
+            # Deduct for error rate
+            score -= error_rate * 50
+            
+            # Deduct for high latency (assuming 200ms is good)
+            if avg_latency > 0.2:
+                score -= min((avg_latency - 0.2) * 100, 30)
+            
+            # Deduct for low call count (may indicate issues)
+            if call_count < 10:
+                score -= 10
+            
+            return max(0, min(100, score))
+            
+        def _find_critical_paths(self, nodes: Dict[str, ServiceNode], edges: Dict[Tuple[str, str], ServiceEdge]) -> List[List[str]]:
+            """Find critical paths in the dependency graph."""
+            critical_paths = []
+            
+            # Find services with high latency
+            high_latency_services = [
+                name for name, node in nodes.items()
+                if node.avg_latency > 0.5  # 500ms threshold
+            ]
+            
+            # Find services with high error rates
+            high_error_services = [
+                name for name, node in nodes.items()
+                if node.error_count / node.call_count > 0.1  # 10% error rate
+            ]
+            
+            # Find paths through high-latency services
+            for service in high_latency_services:
+                path = self._find_path_through_service(service, nodes, edges)
+                if path:
+                    critical_paths.append(path)
+            
+            # Find paths through high-error services
+            for service in high_error_services:
+                path = self._find_path_through_service(service, nodes, edges)
+                if path and path not in critical_paths:
+                    critical_paths.append(path)
+            
+            return critical_paths
+            
+        def _find_path_through_service(self, service: str, nodes: Dict[str, ServiceNode], edges: Dict[Tuple[str, str], ServiceEdge]) -> List[str]:
+            """Find a path through a specific service."""
+            if service not in nodes:
+                return []
+            
+            # Find upstream services
+            upstream = []
+            for (source, target), edge in edges.items():
+                if target == service:
+                    upstream.append(source)
+            
+            # Find downstream services
+            downstream = []
+            for (source, target), edge in edges.items():
+                if source == service:
+                    downstream.append(target)
+            
+            # Build path
+            path = []
+            if upstream:
+                path.extend(upstream[:2])  # Limit to 2 upstream services
+            path.append(service)
+            if downstream:
+                path.extend(downstream[:2])  # Limit to 2 downstream services
+            
+            return path
+            
+        def _identify_bottlenecks(self, nodes: Dict[str, ServiceNode], edges: Dict[Tuple[str, str], ServiceEdge]) -> List[str]:
+            """Identify bottlenecks in the dependency graph."""
+            bottlenecks = []
+            
+            # Find services with high call volume but low health
+            for name, node in nodes.items():
+                if node.call_count > 100 and node.health_score < 70:
+                    bottlenecks.append(name)
+            
+            # Find services with many dependencies (potential single point of failure)
+            for name, node in nodes.items():
+                if len(node.dependencies) > 5:
+                    bottlenecks.append(name)
+            
+            # Find services with high error rates
+            for name, node in nodes.items():
+                if node.error_count / node.call_count > 0.05:  # 5% error rate
+                    bottlenecks.append(name)
+            
+            return list(set(bottlenecks))  # Remove duplicates
+            
+        def _create_empty_graph(self) -> DependencyGraph:
+            """Create an empty dependency graph."""
+            return DependencyGraph(
+                nodes={},
+                edges={},
+                critical_paths=[],
+                bottlenecks=[],
+                generated_at=datetime.now()
+            )
+            
+        def _is_cache_valid(self, cache_key: str) -> bool:
+            """Check if cache entry is valid."""
+            if cache_key not in self.cache:
+                return False
+            
+            if cache_key not in self.cache_expiry:
+                return False
+            
+            return datetime.now() < self.cache_expiry[cache_key]
+            
+        def _cache_result(self, cache_key: str, graph: DependencyGraph):
+            """Cache the dependency graph result."""
+            self.cache[cache_key] = graph
+            cache_duration = timedelta(minutes=10)  # Default cache duration
+            self.cache_expiry[cache_key] = datetime.now() + cache_duration
+            
+    # FastAPI application
+    app = FastAPI(title="Service Dependency Graph API")
+    
+    # Global generator instance
+    generator = None
+    
+    @app.on_event("startup")
+    async def startup_event():
+        """Initialize the dependency graph generator."""
+        global generator
+        try:
+            with open('/etc/dependency-graph/config.yaml', 'r') as f:
+                config = yaml.safe_load(f)
+            generator = DependencyGraphGenerator(config)
+            logger.info("Dependency graph generator initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize dependency graph generator: {e}")
+            raise
+    
+    @app.get("/health")
+    async def health_check():
+        """Health check endpoint."""
+        return {"status": "healthy", "service": "dependency-graph"}
+    
+    @app.get("/ready")
+    async def readiness_check():
+        """Readiness check endpoint."""
+        if generator is None:
+            raise HTTPException(status_code=503, detail="Service not ready")
+        return {"status": "ready", "service": "dependency-graph"}
+    
+    @app.get("/api/v1/graph")
+    async def get_dependency_graph(time_window: str = "1h"):
+        """Get dependency graph."""
+        if generator is None:
+            raise HTTPException(status_code=503, detail="Service not ready")
+        
+        try:
+            graph = await generator.generate_graph(time_window)
+            return JSONResponse(content=asdict(graph), default=str)
+        except Exception as e:
+            logger.error(f"Failed to generate dependency graph: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/v1/graph/nodes")
+    async def get_nodes(time_window: str = "1h"):
+        """Get service nodes."""
+        if generator is None:
+            raise HTTPException(status_code=503, detail="Service not ready")
+        
+        try:
+            graph = await generator.generate_graph(time_window)
+            return JSONResponse(content={name: asdict(node) for name, node in graph.nodes.items()}, default=str)
+        except Exception as e:
+            logger.error(f"Failed to get nodes: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/v1/graph/edges")
+    async def get_edges(time_window: str = "1h"):
+        """Get service edges."""
+        if generator is None:
+            raise HTTPException(status_code=503, detail="Service not ready")
+        
+        try:
+            graph = await generator.generate_graph(time_window)
+            return JSONResponse(content={f"{edge.source}->{edge.target}": asdict(edge) for edge in graph.edges.values()}, default=str)
+        except Exception as e:
+            logger.error(f"Failed to get edges: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/v1/graph/critical-paths")
+    async def get_critical_paths(time_window: str = "1h"):
+        """Get critical paths."""
+        if generator is None:
+            raise HTTPException(status_code=503, detail="Service not ready")
+        
+        try:
+            graph = await generator.generate_graph(time_window)
+            return JSONResponse(content={"critical_paths": graph.critical_paths}, default=str)
+        except Exception as e:
+            logger.error(f"Failed to get critical paths: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/v1/graph/bottlenecks")
+    async def get_bottlenecks(time_window: str = "1h"):
+        """Get bottlenecks."""
+        if generator is None:
+            raise HTTPException(status_code=503, detail="Service not ready")
+        
+        try:
+            graph = await generator.generate_graph(time_window)
+            return JSONResponse(content={"bottlenecks": graph.bottlenecks}, default=str)
+        except Exception as e:
+            logger.error(f"Failed to get bottlenecks: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    if __name__ == "__main__":
+        uvicorn.run(app, host="0.0.0.0", port=8080)

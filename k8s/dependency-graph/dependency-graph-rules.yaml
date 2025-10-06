@@ -1,0 +1,82 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dependency-graph-rules
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: recording-rules
+spec:
+  groups:
+    - name: dependency.graph.rules
+      rules:
+        # Service dependency metrics
+        - record: dependency_graph:service_call_count
+          expr: |
+            sum by (service) (rate(gateway_http_requests_total[5m]))
+          labels:
+            component: "dependency_graph"
+            
+        - record: dependency_graph:service_error_rate
+          expr: |
+            sum by (service) (rate(gateway_http_requests_total{status_code=~"5.."}[5m])) / 
+            sum by (service) (rate(gateway_http_requests_total[5m]))
+          labels:
+            component: "dependency_graph"
+            
+        - record: dependency_graph:service_latency_p95
+          expr: |
+            histogram_quantile(0.95, sum by (service, le) (rate(gateway_http_request_duration_seconds_bucket[5m])))
+          labels:
+            component: "dependency_graph"
+            
+        - record: dependency_graph:service_health_score
+          expr: |
+            100 - (
+              (sum by (service) (rate(gateway_http_requests_total{status_code=~"5.."}[5m])) / 
+              sum by (service) (rate(gateway_http_requests_total[5m])) * 50
+            ) - (
+              histogram_quantile(0.95, sum by (service, le) (rate(gateway_http_request_duration_seconds_bucket[5m]))) > 0.2
+            ) * 30
+          labels:
+            component: "dependency_graph"
+            
+        # Dependency relationship metrics
+        - record: dependency_graph:service_dependencies_count
+          expr: |
+            count by (service) (gateway_http_requests_total)
+          labels:
+            component: "dependency_graph"
+            
+        - record: dependency_graph:service_dependents_count
+          expr: |
+            count by (target_service) (gateway_http_requests_total)
+          labels:
+            component: "dependency_graph"
+            
+        # Critical path metrics
+        - record: dependency_graph:critical_path_length
+          expr: |
+            count by (path) (gateway_http_requests_total)
+          labels:
+            component: "dependency_graph"
+            
+        - record: dependency_graph:critical_path_latency
+          expr: |
+            sum by (path) (histogram_quantile(0.95, sum by (path, le) (rate(gateway_http_request_duration_seconds_bucket[5m]))))
+          labels:
+            component: "dependency_graph"
+            
+        # Bottleneck detection metrics
+        - record: dependency_graph:bottleneck_score
+          expr: |
+            (
+              sum by (service) (rate(gateway_http_requests_total[5m])) > 100
+            ) * (
+              sum by (service) (rate(gateway_http_requests_total{status_code=~"5.."}[5m])) / 
+              sum by (service) (rate(gateway_http_requests_total[5m])) > 0.05
+            ) * (
+              histogram_quantile(0.95, sum by (service, le) (rate(gateway_http_request_duration_seconds_bucket[5m]))) > 0.5
+            )
+          labels:
+            component: "dependency_graph"

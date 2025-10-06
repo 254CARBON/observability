@@ -1,0 +1,104 @@
+apiVersion: k6.io/v1alpha1
+kind: K6
+metadata:
+  name: gateway-api-test
+  namespace: observability
+spec:
+  parallelism: 1
+  script:
+    configMap:
+      name: gateway-synthetic-tests
+      file: gateway-api-test.js
+  runner:
+    image: grafana/k6:latest
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "200m"
+    env:
+      - name: K6_OUT
+        value: "json=http://prometheus-server.observability.svc.cluster.local:9090/api/v1/write"
+      - name: K6_LOG_LEVEL
+        value: "info"
+      - name: K6_LOG_FORMAT
+        value: "json"
+    args:
+      - "--out"
+      - "json=http://prometheus-server.observability.svc.cluster.local:9090/api/v1/write"
+      - "--log-level"
+      - "info"
+      - "--log-format"
+      - "json"
+---
+apiVersion: k6.io/v1alpha1
+kind: K6
+metadata:
+  name: websocket-test
+  namespace: observability
+spec:
+  parallelism: 1
+  script:
+    configMap:
+      name: gateway-synthetic-tests
+      file: websocket-test.js
+  runner:
+    image: grafana/k6:latest
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "200m"
+    env:
+      - name: K6_OUT
+        value: "json=http://prometheus-server.observability.svc.cluster.local:9090/api/v1/write"
+      - name: K6_LOG_LEVEL
+        value: "info"
+      - name: K6_LOG_FORMAT
+        value: "json"
+    args:
+      - "--out"
+      - "json=http://prometheus-server.observability.svc.cluster.local:9090/api/v1/write"
+      - "--log-level"
+      - "info"
+      - "--log-format"
+      - "json"
+---
+apiVersion: k6.io/v1alpha1
+kind: K6
+metadata:
+  name: load-test
+  namespace: observability
+spec:
+  parallelism: 1
+  script:
+    configMap:
+      name: gateway-synthetic-tests
+      file: load-test.js
+  runner:
+    image: grafana/k6:latest
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "200m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
+    env:
+      - name: K6_OUT
+        value: "json=http://prometheus-server.observability.svc.cluster.local:9090/api/v1/write"
+      - name: K6_LOG_LEVEL
+        value: "info"
+      - name: K6_LOG_FORMAT
+        value: "json"
+    args:
+      - "--out"
+      - "json=http://prometheus-server.observability.svc.cluster.local:9090/api/v1/write"
+      - "--log-level"
+      - "info"
+      - "--log-format"
+      - "json"

@@ -1,0 +1,102 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: rca-alerts
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: alert-rules
+    severity: warn
+spec:
+  groups:
+    - name: rca.service.alerts
+      rules:
+        - alert: RCAServiceDown
+          expr: up{app="rca-service"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "RCA Service is down"
+            description: "The Root Cause Analysis service is not running. Automated incident analysis will not function."
+        
+        - alert: RCAHighAnalysisQueueDepth
+          expr: rca_analysis_queue_depth > 50
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High RCA analysis queue depth"
+            description: "RCA analysis queue depth is {{ $value }}. This may indicate insufficient processing capacity."
+        
+        - alert: RCAAnalysisTimeout
+          expr: rca_analysis_duration_seconds:avg_over_time > 300
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "RCA analysis timeout"
+            description: "Average RCA analysis duration is {{ $value }} seconds, exceeding the timeout threshold."
+        
+        - alert: RCALowAccuracy
+          expr: rca_accuracy_percent < 70
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Low RCA accuracy"
+            description: "RCA accuracy is {{ $value }}%, below the acceptable threshold. Consider retraining models."
+        
+        - alert: RCAHighFalsePositiveRate
+          expr: rca_false_positive_rate > 20
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High RCA false positive rate"
+            description: "RCA false positive rate is {{ $value }}%, above the acceptable threshold. Review analysis algorithms."
+        
+        - alert: RCAHighFalseNegativeRate
+          expr: rca_false_negative_rate > 15
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High RCA false negative rate"
+            description: "RCA false negative rate is {{ $value }}%, above the acceptable threshold. Review analysis algorithms."
+        
+        - alert: RCALowThroughput
+          expr: rca_analysis_throughput:rate5m < 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Low RCA analysis throughput"
+            description: "RCA analysis throughput is {{ $value }} analyses per second, below expected levels."
+        
+        - alert: RCALowAlgorithmConfidence
+          expr: rca_algorithm_confidence:avg_over_time < 0.6
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Low RCA algorithm confidence"
+            description: "Average RCA algorithm confidence is {{ $value }}, below the acceptable threshold."
+        
+        - alert: RCAAnalysisFailure
+          expr: sum(rate(rca_analyses_total{status="failed"}[5m])) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "RCA analysis failures detected"
+            description: "RCA analysis failures are occurring. Check service logs for details."
+        
+        - alert: RCADataSourceUnavailable
+          expr: up{job="prometheus"} == 0 or up{job="tempo"} == 0 or up{job="loki"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "RCA data source unavailable"
+            description: "One or more RCA data sources are unavailable. Analysis may be incomplete."

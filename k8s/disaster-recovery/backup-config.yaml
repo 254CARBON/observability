@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-config
+  namespace: observability
+data:
+  backup.yaml: |
+    # Disaster Recovery Backup Configuration
+    # Defines backup strategies for all observability components
+
+    backup:
+      enabled: true
+      schedule: "0 2 * * *"  # Daily at 2 AM UTC
+      retention_days: 30
+      storage:
+        type: s3
+        bucket: observability-backups
+        region: us-west-2
+        prefix: backups/
+
+    components:
+      prometheus:
+        enabled: true
+        backup_type: snapshot
+        snapshot_path: /prometheus
+        retention_days: 30
+        compression: true
+        encryption: true
+        
+      grafana:
+        enabled: true
+        backup_type: database
+        database_url: postgres://grafana-db:5432/grafana
+        include_dashboards: true
+        include_datasources: true
+        include_users: true
+        retention_days: 30
+        
+      tempo:
+        enabled: true
+        backup_type: incremental
+        storage_path: s3://tempo-traces-us-west-2
+        retention_days: 7
+        
+      loki:
+        enabled: true
+        backup_type: incremental
+        storage_path: s3://loki-logs-us-west-2
+        retention_days: 14
+        
+      pyroscope:
+        enabled: true
+        backup_type: snapshot
+        storage_path: /pyroscope
+        retention_days: 7
+
+    replication:
+      enabled: true
+      target_regions:
+        - us-east-1
+        - eu-west-1
+      replication_mode: async
+      replication_lag_threshold_seconds: 300
+
+    restore:
+      enabled: true
+      restore_point: latest
+      verify_after_restore: true
+      notification_channels:
+        - slack
+        - email

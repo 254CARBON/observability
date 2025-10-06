@@ -1,0 +1,28 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ha-alerts
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: alert-rules
+spec:
+  groups:
+    - name: ha.alerts
+      rules:
+        - alert: PrometheusFederationDown
+          expr: prometheus_federation_up == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Prometheus federation endpoint down"
+            description: "Federation endpoint {{ $labels.job }} has been down for more than 5 minutes."
+        - alert: TempoMultiRegionReplicationLag
+          expr: tempo_multi_region_replication_lag_seconds > 60
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High Tempo replication lag"
+            description: "Tempo replication lag is {{ $value }}s in region {{ $labels.region }}."

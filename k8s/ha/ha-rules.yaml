@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ha-recording-rules
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: recording-rules
+spec:
+  groups:
+    - name: ha.federation.rules
+      rules:
+        - record: prometheus_federation_up
+          expr: up{job=~"federation-.*"}
+        - record: prometheus_federation_metric_count_by_region
+          expr: count by (region) (up{job=~"federation-.*"})
+        - record: tempo_multi_region_traces_received
+          expr: sum by (region) (rate(tempo_distributor_spans_received_total[5m]))
+        - record: tempo_multi_region_replication_lag_seconds
+          expr: tempo_ingester_flush_duration_seconds{quantile="0.99"}

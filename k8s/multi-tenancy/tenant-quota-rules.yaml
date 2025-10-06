@@ -1,0 +1,61 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: tenant-quota-recording-rules
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: recording-rules
+spec:
+  groups:
+    - name: tenant.quota.rules
+      rules:
+        # Tenant-specific metric ingestion rates
+        - record: tenant_metrics_ingestion_rate:rate5m
+          expr: sum by (tenant_id) (rate(tenant_metrics_received_total[5m]))
+          labels:
+            component: tenant-manager
+        - record: tenant_logs_ingestion_rate:rate5m
+          expr: sum by (tenant_id) (rate(tenant_logs_received_total[5m]))
+          labels:
+            component: tenant-manager
+        - record: tenant_traces_ingestion_rate:rate5m
+          expr: sum by (tenant_id) (rate(tenant_traces_received_total[5m]))
+          labels:
+            component: tenant-manager
+        
+        # Tenant storage usage
+        - record: tenant_storage_usage_bytes
+          expr: sum by (tenant_id) (tenant_storage_bytes_used)
+          labels:
+            component: tenant-manager
+        
+        # Tenant quota utilization percentage
+        - record: tenant_quota_utilization_percent
+          expr: |
+            (
+              tenant_metrics_ingestion_rate:rate5m / tenant_quota_metrics_ingestion_rate_limit * 100
+            ) or (
+              tenant_logs_ingestion_rate:rate5m / tenant_quota_logs_ingestion_rate_limit * 100
+            ) or (
+              tenant_traces_ingestion_rate:rate5m / tenant_quota_traces_ingestion_rate_limit * 100
+            ) or (
+              tenant_storage_usage_bytes / tenant_quota_storage_limit_bytes * 100
+            )
+          labels:
+            component: tenant-manager
+        
+        # Tenant access patterns
+        - record: tenant_api_requests_total:rate5m
+          expr: sum by (tenant_id, endpoint) (rate(tenant_api_requests_total[5m]))
+          labels:
+            component: tenant-manager
+        
+        # Tenant data retention compliance
+        - record: tenant_data_retention_compliance
+          expr: |
+            (
+              tenant_data_age_seconds < tenant_retention_limit_seconds
+            ) or vector(1)
+          labels:
+            component: tenant-manager

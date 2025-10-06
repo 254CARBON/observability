@@ -1,0 +1,225 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-federation
+  namespace: observability
+  labels:
+    app: prometheus-federation
+    component: prometheus
+    region: us-west-2
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: prometheus-federation
+  template:
+    metadata:
+      labels:
+        app: prometheus-federation
+        component: prometheus
+        region: us-west-2
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: prometheus
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.45.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - '--config.file=/etc/prometheus/prometheus.yml'
+            - '--storage.tsdb.path=/prometheus'
+            - '--web.console.libraries=/etc/prometheus/console_libraries'
+            - '--web.console.templates=/etc/prometheus/consoles'
+            - '--web.enable-lifecycle'
+            - '--web.enable-admin-api'
+            - '--web.external-url=http://prometheus-federation.observability.svc.cluster.local:9090'
+            - '--web.route-prefix=/'
+            - '--storage.tsdb.retention.time=15d'
+            - '--storage.tsdb.retention.size=50GB'
+            - '--storage.tsdb.wal-compression'
+            - '--storage.tsdb.min-block-duration=2h'
+            - '--storage.tsdb.max-block-duration=36h'
+            - '--storage.tsdb.head-chunks-write-queue-size=1000'
+            - '--log.level=info'
+            - '--log.format=json'
+          ports:
+            - containerPort: 9090
+              name: web
+              protocol: TCP
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: REGION
+              value: "us-west-2"
+            - name: CLUSTER
+              value: "primary"
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1000m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/prometheus
+            - name: storage-volume
+              mountPath: /prometheus
+            - name: rules-volume
+              mountPath: /etc/prometheus/rules
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: config-volume
+          configMap:
+            name: prometheus-federation-config
+        - name: storage-volume
+          persistentVolumeClaim:
+            claimName: prometheus-federation-storage
+        - name: rules-volume
+          configMap:
+            name: prometheus-federation-rules
+      nodeSelector:
+        node.kubernetes.io/instance-type: "m5.large"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - prometheus-federation
+                topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - us-west-2a
+                      - us-west-2b
+                      - us-west-2c
+      tolerations:
+        - key: "observability"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-federation
+  namespace: observability
+  labels:
+    app: prometheus-federation
+    component: prometheus
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 9090
+      targetPort: 9090
+      protocol: TCP
+      name: web
+  selector:
+    app: prometheus-federation
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-federation-storage
+  namespace: observability
+  labels:
+    app: prometheus-federation
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: gp3
+  volumeMode: Filesystem
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-federation-rules
+  namespace: observability
+  labels:
+    app: prometheus-federation
+data:
+  federation-rules.yaml: |
+    groups:
+      - name: federation.rules
+        rules:
+          # Federation health monitoring
+          - record: prometheus_federation_up
+            expr: up{job=~"federation-.*"}
+            labels:
+              component: federation
+          
+          # Cross-region metric aggregation
+          - record: prometheus_federation_metric_count_by_region
+            expr: count by (region) (up{job=~"federation-.*"})
+            labels:
+              component: federation
+          
+          # Federation latency monitoring
+          - record: prometheus_federation_scrape_duration_seconds
+            expr: prometheus_tsdb_head_samples_appended_total{job=~"federation-.*"}
+            labels:
+              component: federation
+          
+          # Cross-cluster metric aggregation
+          - record: prometheus_federation_metric_count_by_cluster
+            expr: count by (cluster) (up{job=~"federation-.*"})
+            labels:
+              component: federation
+          
+          # Federation error rate
+          - record: prometheus_federation_error_rate
+            expr: rate(prometheus_tsdb_head_samples_appended_total{job=~"federation-.*"}[5m])
+            labels:
+              component: federation

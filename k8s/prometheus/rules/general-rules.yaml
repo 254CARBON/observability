@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: observability
+# Recording rules for aggregations used by dashboards/alerts. These reduce
+# query cost and centralize naming for gateway and pipeline services.
+data:
+  general-rules.yaml: |
+    groups:
+    - name: general
+      rules:
+      # Gateway RED metrics aggregation
+      - record: gateway:http_requests:rate5m
+        expr: rate(gateway_http_requests_total[5m])
+        labels:
+          service: gateway
+      
+      - record: gateway:http_requests:rate15m
+        expr: rate(gateway_http_requests_total[15m])
+        labels:
+          service: gateway
+      
+      - record: gateway:http_request_duration_seconds:rate5m
+        expr: rate(gateway_http_request_duration_seconds_sum[5m]) / rate(gateway_http_request_duration_seconds_count[5m])
+        labels:
+          service: gateway
+      
+      # Error rate calculations
+      - record: gateway:http_errors:rate5m
+        expr: rate(gateway_http_requests_total{status_code=~"5.."}[5m])
+        labels:
+          service: gateway
+      
+      - record: gateway:http_error_rate:ratio5m
+        expr: rate(gateway_http_requests_total{status_code=~"5.."}[5m]) / rate(gateway_http_requests_total[5m])
+        labels:
+          service: gateway
+      
+      # Latency percentiles
+      - record: gateway:http_request_duration_seconds:p95
+        expr: histogram_quantile(0.95, rate(gateway_http_request_duration_seconds_bucket[5m]))
+        labels:
+          service: gateway
+      
+      - record: gateway:http_request_duration_seconds:p99
+        expr: histogram_quantile(0.99, rate(gateway_http_request_duration_seconds_bucket[5m]))
+        labels:
+          service: gateway
+      
+      # Data pipeline metrics
+      - record: ingestion:connector_runs:rate5m
+        expr: rate(ingestion_connector_run_duration_seconds_count[5m])
+        labels:
+          service: ingestion
+      
+      - record: ingestion:connector_duration:p95
+        expr: histogram_quantile(0.95, rate(ingestion_connector_run_duration_seconds_bucket[5m]))
+        labels:
+          service: ingestion
+      
+      - record: normalization:records_processed:rate5m
+        expr: rate(normalization_records_processed_total[5m])
+        labels:
+          service: normalization
+      
+      # ML inference metrics
+      - record: ml:inference_latency:p95
+        expr: histogram_quantile(0.95, rate(model_serving_inference_latency_seconds_bucket[5m]))
+        labels:
+          service: ml
+      
+      - record: ml:inference_errors:rate5m
+        expr: rate(model_serving_inference_errors_total[5m])
+        labels:
+          service: ml
+      
+      # Infrastructure metrics
+      - record: infra:clickhouse_query_duration:p95
+        expr: histogram_quantile(0.95, rate(clickhouse_query_duration_seconds_bucket[5m]))
+        labels:
+          service: clickhouse
+      
+      # Cardinality reduction - hash high-cardinality labels
+      - record: gateway:http_requests_by_endpoint:rate5m
+        expr: rate(gateway_http_requests_total[5m])
+        labels:
+          service: gateway
+        # Note: endpoint label will be hashed in relabel_configs

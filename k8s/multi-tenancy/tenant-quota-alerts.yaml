@@ -1,0 +1,71 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: tenant-quota-alerts
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: alert-rules
+    severity: warn
+spec:
+  groups:
+    - name: tenant.quota.alerts
+      rules:
+        - alert: TenantQuotaExceeded
+          expr: tenant_quota_utilization_percent > 100
+          for: 1m
+          labels:
+            severity: critical
+            tenant: "{{ $labels.tenant_id }}"
+          annotations:
+            summary: "Tenant {{ $labels.tenant_id }} quota exceeded"
+            description: "Tenant {{ $labels.tenant_id }} has exceeded its quota limit ({{ $value }}% utilization). Requests may be throttled or rejected."
+        
+        - alert: TenantQuotaWarning
+          expr: tenant_quota_utilization_percent > 80
+          for: 5m
+          labels:
+            severity: warning
+            tenant: "{{ $labels.tenant_id }}"
+          annotations:
+            summary: "Tenant {{ $labels.tenant_id }} approaching quota limit"
+            description: "Tenant {{ $labels.tenant_id }} is approaching its quota limit ({{ $value }}% utilization). Consider increasing quota or optimizing usage."
+        
+        - alert: TenantStorageLimitExceeded
+          expr: tenant_storage_usage_bytes > tenant_quota_storage_limit_bytes
+          for: 1m
+          labels:
+            severity: critical
+            tenant: "{{ $labels.tenant_id }}"
+          annotations:
+            summary: "Tenant {{ $labels.tenant_id }} storage limit exceeded"
+            description: "Tenant {{ $labels.tenant_id }} has exceeded its storage limit. Data ingestion may be blocked."
+        
+        - alert: TenantDataRetentionViolation
+          expr: tenant_data_retention_compliance == 0
+          for: 1h
+          labels:
+            severity: warning
+            tenant: "{{ $labels.tenant_id }}"
+          annotations:
+            summary: "Tenant {{ $labels.tenant_id }} data retention violation"
+            description: "Tenant {{ $labels.tenant_id }} has data older than its retention policy. Consider cleaning up old data."
+        
+        - alert: TenantManagerServiceDown
+          expr: up{app="tenant-manager"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Tenant Manager Service is down"
+            description: "The tenant manager service is not running. Multi-tenancy features and quota enforcement will not function."
+        
+        - alert: TenantAccessDenied
+          expr: sum by (tenant_id) (rate(tenant_access_denied_total[5m])) > 0
+          for: 1m
+          labels:
+            severity: warning
+            tenant: "{{ $labels.tenant_id }}"
+          annotations:
+            summary: "Tenant {{ $labels.tenant_id }} access denied"
+            description: "Tenant {{ $labels.tenant_id }} is experiencing access denials. Check authentication and authorization configuration."

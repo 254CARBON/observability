@@ -1,0 +1,23 @@
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: GitRepository
+metadata:
+  name: observability-config
+  namespace: flux-system
+spec:
+  interval: 1m
+  ref:
+    branch: main
+  url: https://github.com/254carbon/observability-config
+  secretRef:
+    name: git-credentials
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: git-credentials
+  namespace: flux-system
+type: Opaque
+data:
+  # Base64 encoded username:password or token
+  username: <base64-encoded-username>
+  password: <base64-encoded-password-or-token>

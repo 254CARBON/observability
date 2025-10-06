@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dependency-graph-config
+  namespace: observability
+data:
+  config.yaml: |
+    # Service Dependency Graph Configuration
+    
+    # Data sources
+    data_sources:
+      tempo:
+        endpoint: "http://tempo.observability.svc.cluster.local:3200"
+        query_timeout: "30s"
+        max_traces: 10000
+      prometheus:
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090"
+        query_timeout: "10s"
+        
+    # Graph generation settings
+    graph_generation:
+      # Time window for analysis
+      time_window: "1h"
+      # Minimum number of traces for a service to be included
+      min_trace_count: 10
+      # Maximum number of services to include
+      max_services: 100
+      # Minimum call frequency threshold
+      min_call_frequency: 0.01  # 1% of total calls
+      
+    # Service discovery
+    service_discovery:
+      # Automatic service discovery from traces
+      auto_discovery: true
+      # Service name patterns to include
+      include_patterns:
+        - "254carbon-*"
+        - "gateway"
+        - "ingestion"
+        - "normalization"
+        - "streaming"
+      # Service name patterns to exclude
+      exclude_patterns:
+        - "kube-*"
+        - "prometheus"
+        - "grafana"
+        - "tempo"
+        - "loki"
+        
+    # Dependency analysis
+    dependency_analysis:
+      # Call pattern analysis
+      call_patterns:
+        enabled: true
+        # Analyze call frequency
+        frequency_analysis: true
+        # Analyze call latency
+        latency_analysis: true
+        # Analyze error rates
+        error_analysis: true
+        
+      # Critical path analysis
+      critical_path:
+        enabled: true
+        # Identify bottlenecks
+        bottleneck_detection: true
+        # Calculate critical path metrics
+        path_metrics: true
+        
+      # Service health analysis
+      service_health:
+        enabled: true
+        # Health score calculation
+        health_scoring: true
+        # Dependency health impact
+        dependency_impact: true
+        
+    # Graph visualization
+    visualization:
+      # Graph layout algorithm
+      layout: "force-directed"  # force-directed, hierarchical, circular
+      # Node styling
+      nodes:
+        # Size based on call volume
+        size_by_volume: true
+        # Color based on health score
+        color_by_health: true
+        # Shape based on service type
+        shape_by_type: true
+      # Edge styling
+      edges:
+        # Width based on call frequency
+        width_by_frequency: true
+        # Color based on error rate
+        color_by_errors: true
+        # Style based on call type
+        style_by_type: true
+        
+    # Export settings
+    export:
+      # Export formats
+      formats:
+        - "json"
+        - "graphml"
+        - "dot"
+      # Export frequency
+      frequency: "5m"
+      # Export location
+      location: "/var/lib/dependency-graph/exports"
+      
+    # Caching
+    cache:
+      enabled: true
+      # Cache duration
+      duration: "10m"
+      # Cache size limit
+      size_limit: "100MB"
+      
+    # Monitoring
+    monitoring:
+      # Metrics collection
+      metrics:
+        enabled: true
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090"
+        metric_prefix: "dependency_graph_"
+      # Health checks
+      health_checks:
+        enabled: true
+        endpoint: "/health"
+        interval: "30s"
+        timeout: "5s"

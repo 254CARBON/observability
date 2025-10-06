@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: streaming-red-alerts
+  namespace: observability
+# RED-style and capacity alerts for the streaming service (WebSockets).
+data:
+  streaming-red.yaml: |
+    groups:
+    - name: streaming-red
+      rules:
+      # WebSocket Connection Drop Rate
+      - alert: ALERT_STREAMING_CONNECTION_CHURN
+        expr: rate(streaming_active_ws_connections[5m]) < -0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: streaming
+          alert_type: connection_churn
+        annotations:
+          summary: "High WebSocket connection churn detected"
+          description: "Connection drop rate is {{ $value }} connections/second"
+          runbook_url: "https://docs.254carbon.local/runbooks/streaming-connection-churn"
+      
+      # High Connection Count
+      - alert: ALERT_STREAMING_HIGH_CONNECTION_COUNT
+        expr: streaming_active_ws_connections > 10000
+        for: 5m
+        labels:
+          severity: warning
+          service: streaming
+          alert_type: capacity
+        annotations:
+          summary: "High WebSocket connection count"
+          description: "Active connections: {{ $value }} (threshold: 10000)"
+          runbook_url: "https://docs.254carbon.local/runbooks/streaming-high-connections"
+      
+      # Message Processing Errors
+      - alert: ALERT_STREAMING_MESSAGE_ERRORS
+        expr: rate(streaming_message_errors_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: critical
+          service: streaming
+          alert_type: message_errors
+        annotations:
+          summary: "High message processing error rate"
+          description: "Message error rate: {{ $value }} errors/second"
+          runbook_url: "https://docs.254carbon.local/runbooks/streaming-message-errors"
+      
+      # Streaming Latency Spike
+      - alert: ALERT_STREAMING_LATENCY_SPIKE
+        expr: streaming_message_processing_duration_seconds_p95 > 1.0
+        for: 2m
+        labels:
+          severity: warning
+          service: streaming
+          alert_type: latency
+        annotations:
+          summary: "Streaming message processing latency spike"
+          description: "P95 processing latency: {{ $value }}s (threshold: 1.0s)"
+          runbook_url: "https://docs.254carbon.local/runbooks/streaming-latency-spike"

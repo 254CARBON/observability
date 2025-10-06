@@ -1,0 +1,221 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "254Carbon Log Event Schema",
+  "description": "Standardized log event schema for 254Carbon platform",
+  "type": "object",
+  "required": ["ts", "level", "service", "message"],
+  "properties": {
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp in UTC"
+    },
+    "level": {
+      "type": "string",
+      "enum": ["DEBUG", "INFO", "WARN", "ERROR", "FATAL"],
+      "description": "Log level"
+    },
+    "service": {
+      "type": "string",
+      "pattern": "^254carbon-[a-z-]+$",
+      "description": "Service name following naming convention"
+    },
+    "trace_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "description": "32-character hex trace ID for correlation"
+    },
+    "span_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "description": "16-character hex span ID for correlation"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^req-[a-zA-Z0-9-]+$",
+      "description": "Unique request identifier"
+    },
+    "tenant_id": {
+      "type": "string",
+      "enum": ["default", "premium", "enterprise"],
+      "description": "Tenant identifier"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["http_access", "business_event", "error", "performance", "security", "audit"],
+      "description": "Type of event being logged"
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Human-readable log message"
+    },
+    "duration_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Operation duration in milliseconds"
+    },
+    "status_code": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 599,
+      "description": "HTTP status code"
+    },
+    "method": {
+      "type": "string",
+      "enum": ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
+      "description": "HTTP method"
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^/[a-zA-Z0-9/._-]*$",
+      "description": "HTTP request path"
+    },
+    "user_agent": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "HTTP User-Agent header"
+    },
+    "client_ip": {
+      "type": "string",
+      "format": "ipv4",
+      "description": "Client IP address"
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Error type/class name"
+        },
+        "message": {
+          "type": "string",
+          "description": "Error message"
+        },
+        "stack_trace": {
+          "type": "string",
+          "description": "Stack trace (truncated)"
+        },
+        "code": {
+          "type": "string",
+          "description": "Error code"
+        }
+      }
+    },
+    "performance": {
+      "type": "object",
+      "properties": {
+        "cpu_usage_percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "memory_usage_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gc_duration_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "thread_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "business": {
+      "type": "object",
+      "properties": {
+        "instrument_id": {
+          "type": "string",
+          "description": "Financial instrument identifier"
+        },
+        "market": {
+          "type": "string",
+          "description": "Market identifier"
+        },
+        "order_id": {
+          "type": "string",
+          "description": "Order identifier"
+        },
+        "user_id": {
+          "type": "string",
+          "description": "User identifier"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Session identifier"
+        }
+      }
+    },
+    "extra": {
+      "type": "object",
+      "description": "Additional context-specific fields",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "ts": "2025-01-06T12:34:56.789Z",
+      "level": "INFO",
+      "service": "254carbon-gateway",
+      "trace_id": "abcd1234efgh5678ijkl9012mnop3456",
+      "span_id": "qrst7890uvwx1234",
+      "request_id": "req-xyz-123",
+      "tenant_id": "default",
+      "event_type": "http_access",
+      "message": "GET /api/v1/instruments 200 42ms",
+      "duration_ms": 42,
+      "status_code": 200,
+      "method": "GET",
+      "path": "/api/v1/instruments",
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+      "client_ip": "192.168.1.100",
+      "extra": {
+        "cache_hit": true,
+        "instrument_count": 150
+      }
+    },
+    {
+      "ts": "2025-01-06T12:34:56.789Z",
+      "level": "ERROR",
+      "service": "254carbon-gateway",
+      "trace_id": "abcd1234efgh5678ijkl9012mnop3456",
+      "span_id": "qrst7890uvwx1234",
+      "request_id": "req-xyz-124",
+      "tenant_id": "default",
+      "event_type": "error",
+      "message": "Database connection failed",
+      "error": {
+        "type": "ConnectionError",
+        "message": "Connection refused",
+        "code": "CONNECTION_REFUSED"
+      },
+      "extra": {
+        "database": "market_data",
+        "retry_count": 3
+      }
+    },
+    {
+      "ts": "2025-01-06T12:34:56.789Z",
+      "level": "INFO",
+      "service": "254carbon-ingestion",
+      "trace_id": "abcd1234efgh5678ijkl9012mnop3456",
+      "span_id": "qrst7890uvwx1234",
+      "tenant_id": "default",
+      "event_type": "business_event",
+      "message": "Market data processed successfully",
+      "business": {
+        "instrument_id": "AAPL",
+        "market": "NASDAQ",
+        "records_processed": 1000
+      },
+      "extra": {
+        "connector": "bloomberg",
+        "processing_time_ms": 150
+      }
+    }
+  ]
+}

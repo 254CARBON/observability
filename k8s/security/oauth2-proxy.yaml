@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oauth2-proxy-config
+  namespace: observability
+data:
+  oauth2_proxy.cfg: |
+    # OAuth2 Proxy Configuration for 254Carbon Observability
+    # This provides authentication and authorization for observability components
+    
+    # OAuth2 Provider Configuration
+    provider = "oidc"
+    oidc_issuer_url = "https://auth.254carbon.com"
+    client_id = "observability-client"
+    client_secret = "observability-secret"
+    
+    # Session Configuration
+    cookie_secret = "observability-cookie-secret-change-in-production"
+    cookie_secure = true
+    cookie_httponly = true
+    cookie_samesite = "lax"
+    cookie_expire = "168h" # 7 days
+    cookie_refresh = "60m"
+    
+    # Authentication Configuration
+    email_domains = ["254carbon.com"]
+    whitelist_domains = ["254carbon.com"]
+    skip_provider_button = true
+    
+    # Authorization Configuration
+    authz_log_level = "info"
+    authz_log_format = "json"
+    
+    # Upstream Configuration
+    upstreams = [
+        "http://grafana.observability.svc.cluster.local:3000",
+        "http://prometheus-server.observability.svc.cluster.local:9090",
+        "http://alertmanager.observability.svc.cluster.local:9093"
+    ]
+    
+    # Security Headers
+    set_xauthrequest = true
+    set_authorization_header = true
+    pass_access_token = true
+    pass_authorization_header = true
+    
+    # Logging Configuration
+    log_level = "info"
+    log_format = "json"
+    
+    # Health Check Configuration
+    health_check_path = "/ping"
+    health_check_interval = "30s"
+    
+    # Graceful Shutdown
+    graceful_shutdown_timeout = "30s"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy
+  namespace: observability
+  labels:
+    app: oauth2-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: oauth2-proxy
+  template:
+    metadata:
+      labels:
+        app: oauth2-proxy
+    spec:
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.4.0
+          ports:
+            - containerPort: 4180
+              name: http
+            - containerPort: 8080
+              name: metrics
+          args:
+            - --config=/etc/oauth2-proxy/oauth2_proxy.cfg
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/oauth2-proxy
+          env:
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy-secrets
+                  key: cookie-secret
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy-secrets
+                  key: client-secret
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: config-volume
+          configMap:
+            name: oauth2-proxy-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2-proxy
+  namespace: observability
+  labels:
+    app: oauth2-proxy
+spec:
+  type: ClusterIP
+  selector:
+    app: oauth2-proxy
+  ports:
+    - protocol: TCP
+      port: 4180
+      targetPort: 4180
+      name: http
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+      name: metrics
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oauth2-proxy-secrets
+  namespace: observability
+type: Opaque
+data:
+  # Base64 encoded secrets - replace with actual values in production
+  cookie-secret: b2JzZXJ2YWJpbGl0eS1jb29raWUtc2VjcmV0LWNoYW5nZS1pbi1wcm9kdWN0aW9u
+  client-secret: b2JzZXJ2YWJpbGl0eS1zZWNyZXQ=

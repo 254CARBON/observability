@@ -1,0 +1,408 @@
+# Sampling Strategy Configuration for 254Carbon Observability Platform
+# Defines sampling rates and strategies for different signal types and conditions
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sampling-strategy
+  namespace: observability
+data:
+  sampling-strategy.yaml: |
+    # Global sampling configuration
+    global:
+      # Default sampling rate
+      default_sampling_rate: 0.1
+      
+      # Environment-specific overrides
+      environments:
+        local:
+          sampling_rate: 1.0
+          head_sampling: true
+          tail_sampling: false
+        
+        staging:
+          sampling_rate: 0.5
+          head_sampling: true
+          tail_sampling: true
+        
+        production:
+          sampling_rate: 0.1
+          head_sampling: true
+          tail_sampling: true
+    
+    # Trace sampling strategies
+    traces:
+      # Head-based sampling (decide at trace start)
+      head_sampling:
+        enabled: true
+        type: "probabilistic"
+        rate: 0.1
+        rules:
+          # Always sample errors
+          - condition: "error == true"
+            rate: 1.0
+            priority: 1
+          
+          # Always sample slow operations
+          - condition: "duration > 2s"
+            rate: 1.0
+            priority: 2
+          
+          # Sample high-value operations
+          - condition: "service == 'gateway'"
+            rate: 0.5
+            priority: 3
+          
+          # Sample data pipeline operations
+          - condition: "service == 'ingestion' OR service == 'normalization'"
+            rate: 0.3
+            priority: 4
+          
+          # Default sampling
+          - condition: "true"
+            rate: 0.1
+            priority: 100
+      
+      # Tail-based sampling (decide after trace completion)
+      tail_sampling:
+        enabled: true
+        decision_wait: "10s"
+        num_traces: 50000
+        policies:
+          # Keep error traces
+          - name: "errors"
+            type: "status_code"
+            status_code:
+              status_codes: ["ERROR"]
+          
+          # Keep slow traces
+          - name: "slow"
+            type: "latency"
+            latency:
+              threshold_ms: 1000
+          
+          # Keep traces with high cardinality
+          - name: "high_cardinality"
+            type: "span_count"
+            span_count:
+              min_spans: 10
+          
+          # Keep traces with specific attributes
+          - name: "business_critical"
+            type: "string_attribute"
+            string_attribute:
+              key: "business.critical"
+              values: ["true"]
+          
+          # Keep traces with specific services
+          - name: "critical_services"
+            type: "string_attribute"
+            string_attribute:
+              key: "service.name"
+              values: ["254carbon-gateway", "254carbon-streaming"]
+          
+          # Baseline sampling
+          - name: "baseline"
+            type: "probabilistic"
+            probabilistic:
+              sampling_percentage: 10
+      
+      # Cost optimization
+      cost_optimization:
+        # Limit trace size
+        max_trace_size: "1MB"
+        max_spans_per_trace: 1000
+        
+        # Compress trace data
+        compression_enabled: true
+        
+        # Drop low-value traces
+        drop_low_value: true
+        low_value_threshold: "100ms"
+        
+        # Limit attributes
+        max_attributes_per_span: 50
+        max_events_per_span: 20
+    
+    # Metrics sampling strategies
+    metrics:
+      # Counter sampling
+      counters:
+        # Sample high-frequency counters
+        high_frequency:
+          threshold: "1000/s"
+          sampling_rate: 0.1
+        
+        # Sample business counters
+        business:
+          sampling_rate: 1.0
+        
+        # Sample infrastructure counters
+        infrastructure:
+          sampling_rate: 0.5
+      
+      # Histogram sampling
+      histograms:
+        # Sample latency histograms
+        latency:
+          sampling_rate: 1.0
+          bucket_reduction: true
+          max_buckets: 20
+        
+        # Sample size histograms
+        size:
+          sampling_rate: 0.5
+          bucket_reduction: true
+          max_buckets: 15
+        
+        # Sample custom histograms
+        custom:
+          sampling_rate: 0.3
+          bucket_reduction: true
+          max_buckets: 10
+      
+      # Gauge sampling
+      gauges:
+        # Sample resource gauges
+        resources:
+          sampling_rate: 1.0
+          interval: "30s"
+        
+        # Sample business gauges
+        business:
+          sampling_rate: 1.0
+          interval: "1m"
+        
+        # Sample custom gauges
+        custom:
+          sampling_rate: 0.5
+          interval: "5m"
+      
+      # Cost optimization
+      cost_optimization:
+        # Drop unused metrics
+        drop_unused: true
+        unused_threshold: "7d"
+        
+        # Limit cardinality
+        max_series_per_metric: 10000
+        max_labels_per_metric: 100
+        
+        # Compress old metrics
+        compress_old: true
+        compression_threshold: "30d"
+        
+        # Downsample old metrics
+        downsample_old: true
+        downsampling_threshold: "7d"
+        downsampling_intervals: ["1h", "1d", "1w"]
+    
+    # Log sampling strategies
+    logs:
+      # Error logs (always keep)
+      errors:
+        sampling_rate: 1.0
+        retention: "30d"
+      
+      # Audit logs (always keep)
+      audit:
+        sampling_rate: 1.0
+        retention: "7y"
+      
+      # Application logs (sample)
+      application:
+        sampling_rate: 0.5
+        retention: "14d"
+      
+      # Debug logs (minimal sampling)
+      debug:
+        sampling_rate: 0.1
+        retention: "3d"
+      
+      # Performance logs
+      performance:
+        sampling_rate: 0.3
+        retention: "7d"
+      
+      # Cost optimization
+      cost_optimization:
+        # Filter noise
+        noise_filtering: true
+        noise_patterns:
+          - ".*health.*check.*"
+          - ".*heartbeat.*"
+          - ".*ping.*"
+        
+        # Limit log size
+        max_line_size: "256KB"
+        max_log_size: "1MB"
+        
+        # Compress logs
+        compression_enabled: true
+        
+        # Truncate long logs
+        truncate_long_logs: true
+        max_log_length: 10000
+    
+    # Profile sampling strategies
+    profiles:
+      # Continuous profiling
+      continuous:
+        sampling_rate: 0.01
+        interval: "60s"
+        retention: "7d"
+      
+      # Ad-hoc profiling
+      adhoc:
+        sampling_rate: 1.0
+        interval: "10s"
+        retention: "30d"
+      
+      # Performance profiling
+      performance:
+        sampling_rate: 0.1
+        interval: "30s"
+        retention: "14d"
+      
+      # Cost optimization
+      cost_optimization:
+        # Limit profile size
+        max_profile_size: "10MB"
+        
+        # Compress profiles
+        compression_enabled: true
+        
+        # Drop low-value profiles
+        drop_low_value: true
+        low_value_threshold: "1%"
+    
+    # Service-specific sampling
+    services:
+      gateway:
+        traces:
+          sampling_rate: 0.5
+          error_sampling: 1.0
+          slow_sampling: 1.0
+        metrics:
+          sampling_rate: 1.0
+        logs:
+          sampling_rate: 0.7
+          error_sampling: 1.0
+      
+      streaming:
+        traces:
+          sampling_rate: 0.3
+          error_sampling: 1.0
+          slow_sampling: 1.0
+        metrics:
+          sampling_rate: 1.0
+        logs:
+          sampling_rate: 0.5
+          error_sampling: 1.0
+      
+      ingestion:
+        traces:
+          sampling_rate: 0.2
+          error_sampling: 1.0
+          slow_sampling: 1.0
+        metrics:
+          sampling_rate: 1.0
+        logs:
+          sampling_rate: 0.3
+          error_sampling: 1.0
+      
+      normalization:
+        traces:
+          sampling_rate: 0.2
+          error_sampling: 1.0
+          slow_sampling: 1.0
+        metrics:
+          sampling_rate: 1.0
+        logs:
+          sampling_rate: 0.3
+          error_sampling: 1.0
+      
+      ml:
+        traces:
+          sampling_rate: 0.1
+          error_sampling: 1.0
+          slow_sampling: 1.0
+        metrics:
+          sampling_rate: 1.0
+        logs:
+          sampling_rate: 0.2
+          error_sampling: 1.0
+      
+      infrastructure:
+        traces:
+          sampling_rate: 0.05
+          error_sampling: 1.0
+          slow_sampling: 1.0
+        metrics:
+          sampling_rate: 0.5
+        logs:
+          sampling_rate: 0.1
+          error_sampling: 1.0
+    
+    # Dynamic sampling based on load
+    dynamic_sampling:
+      enabled: true
+      # Adjust sampling based on system load
+      load_based:
+        enabled: true
+        high_load_threshold: 0.8
+        high_load_sampling_rate: 0.05
+        normal_load_sampling_rate: 0.1
+        low_load_sampling_rate: 0.2
+      
+      # Adjust sampling based on error rate
+      error_based:
+        enabled: true
+        high_error_threshold: 0.05
+        high_error_sampling_rate: 0.5
+        normal_error_sampling_rate: 0.1
+        low_error_sampling_rate: 0.05
+      
+      # Adjust sampling based on latency
+      latency_based:
+        enabled: true
+        high_latency_threshold: "2s"
+        high_latency_sampling_rate: 0.3
+        normal_latency_sampling_rate: 0.1
+        low_latency_sampling_rate: 0.05
+    
+    # Sampling quality assurance
+    quality_assurance:
+      # Monitor sampling effectiveness
+      monitoring:
+        enabled: true
+        check_interval: "1h"
+        alert_threshold: "0.8"
+      
+      # Validate sampling decisions
+      validation:
+        enabled: true
+        check_interval: "1d"
+        sample_size: 1000
+      
+      # A/B testing for sampling strategies
+      ab_testing:
+        enabled: false
+        test_duration: "7d"
+        test_groups: ["control", "treatment"]
+        success_metric: "alert_precision"
+    
+    # Compliance and audit
+    compliance:
+      # Audit sampling decisions
+      audit:
+        enabled: true
+        log_sampling_decisions: true
+        retention: "30d"
+      
+      # Compliance reporting
+      reporting:
+        enabled: true
+        report_interval: "1d"
+        include_sampling_rates: true
+        include_cost_impact: true

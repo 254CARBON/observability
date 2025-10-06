@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backup-service
+  namespace: observability
+  labels:
+    app: backup-service
+    component: disaster-recovery
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backup-service
+  template:
+    metadata:
+      labels:
+        app: backup-service
+        component: disaster-recovery
+    spec:
+      serviceAccountName: backup-service
+      containers:
+        - name: backup-service
+          image: busybox
+          command: ["/bin/sh", "-c", "echo 'Backup Service running (placeholder)'; sleep 3600"]
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: backup-s3-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backup-s3-credentials
+                  key: secret-access-key
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/backup
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "200m"
+      volumes:
+        - name: config-volume
+          configMap:
+            name: backup-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backup-service
+  namespace: observability
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+  selector:
+    app: backup-service
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backup-s3-credentials
+  namespace: observability
+type: Opaque
+data:
+  access-key-id: <base64-encoded-access-key>
+  secret-access-key: <base64-encoded-secret-key>

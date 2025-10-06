@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tenant-config
+  namespace: observability
+data:
+  config.yaml: |
+    # Configuration for Multi-Tenancy Service
+    # This service would manage tenant-specific data partitioning,
+    # quota management, and access control for observability data.
+
+    # Tenant definitions
+    tenants:
+      - id: "tenant-a"
+        name: "Tenant A"
+        description: "Production tenant for customer A"
+        data_retention_days: 30
+        quota_limits:
+          metrics_ingestion_rate: "10000" # metrics per second
+          logs_ingestion_rate: "1000" # log lines per second
+          traces_ingestion_rate: "1000" # traces per second
+          storage_limit_gb: 100
+        access_policies:
+          - resource: "metrics"
+            actions: ["read", "write"]
+            filters:
+              namespace: "tenant-a-*"
+          - resource: "logs"
+            actions: ["read", "write"]
+            filters:
+              namespace: "tenant-a-*"
+          - resource: "traces"
+            actions: ["read", "write"]
+            filters:
+              namespace: "tenant-a-*"
+      - id: "tenant-b"
+        name: "Tenant B"
+        description: "Development tenant for customer B"
+        data_retention_days: 7
+        quota_limits:
+          metrics_ingestion_rate: "1000"
+          logs_ingestion_rate: "100"
+          traces_ingestion_rate: "100"
+          storage_limit_gb: 10
+        access_policies:
+          - resource: "metrics"
+            actions: ["read", "write"]
+            filters:
+              namespace: "tenant-b-*"
+          - resource: "logs"
+            actions: ["read", "write"]
+            filters:
+              namespace: "tenant-b-*"
+          - resource: "traces"
+            actions: ["read", "write"]
+            filters:
+              namespace: "tenant-b-*"
+
+    # Data partitioning strategy
+    partitioning:
+      strategy: "tenant_id" # Partition by tenant ID
+      prometheus_remote_write:
+        enabled: true
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090/api/v1/write"
+        tenant_header: "X-Tenant-ID"
+      loki_push:
+        enabled: true
+        endpoint: "http://loki.observability.svc.cluster.local:3100/loki/api/v1/push"
+        tenant_header: "X-Tenant-ID"
+      tempo_push:
+        enabled: true
+        endpoint: "http://tempo.observability.svc.cluster.local:3200/api/v2/push"
+        tenant_header: "X-Tenant-ID"
+
+    # Quota enforcement
+    quota_enforcement:
+      enabled: true
+      check_interval_seconds: 60
+      violation_actions:
+        - type: "throttle" # Throttle requests when quota exceeded
+          threshold_percent: 90
+        - type: "reject" # Reject requests when quota exceeded
+          threshold_percent: 100
+        - type: "alert" # Send alert when quota exceeded
+          threshold_percent: 80
+
+    # Storage isolation
+    storage_isolation:
+      prometheus_metrics:
+        enabled: true
+        partition_by: "tenant_id"
+        retention_per_tenant: true
+      loki_logs:
+        enabled: true
+        partition_by: "tenant_id"
+        retention_per_tenant: true
+      tempo_traces:
+        enabled: true
+        partition_by: "tenant_id"
+        retention_per_tenant: true
+
+    # Access control
+    access_control:
+      authentication:
+        type: "jwt" # JWT-based authentication
+        issuer: "https://auth.254carbon.com"
+        audience: "observability"
+      authorization:
+        type: "rbac" # Role-based access control
+        roles:
+          - name: "tenant-admin"
+            permissions: ["read", "write", "admin"]
+            scope: "tenant"
+          - name: "tenant-reader"
+            permissions: ["read"]
+            scope: "tenant"
+          - name: "global-admin"
+            permissions: ["read", "write", "admin"]
+            scope: "global"

@@ -1,0 +1,191 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: k6-synthetic-scheduler
+  namespace: observability
+spec:
+  schedule: "*/5 * * * *"  # Run every 5 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: k6-scheduler
+            image: grafana/k6:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              # Run API test
+              kubectl apply -f /k6-tests/gateway-api-test.yaml
+              sleep 30
+              
+              # Run WebSocket test
+              kubectl apply -f /k6-tests/websocket-test.yaml
+              sleep 30
+              
+              # Run load test (less frequent)
+              if [ $(date +%M) -eq 0 ] || [ $(date +%M) -eq 30 ]; then
+                kubectl apply -f /k6-tests/load-test.yaml
+                sleep 60
+              fi
+              
+              # Clean up completed tests
+              kubectl delete k6 --all -n observability --field-selector=status.phase=Finished
+            volumeMounts:
+            - name: k6-tests
+              mountPath: /k6-tests
+            env:
+            - name: KUBECONFIG
+              value: /var/run/secrets/kubernetes.io/serviceaccount
+          volumes:
+          - name: k6-tests
+            configMap:
+              name: k6-test-configs
+          restartPolicy: OnFailure
+          serviceAccountName: k6-scheduler
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k6-scheduler
+  namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k6-scheduler
+rules:
+- apiGroups: ["k6.io"]
+  resources: ["k6s"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k6-scheduler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k6-scheduler
+subjects:
+- kind: ServiceAccount
+  name: k6-scheduler
+  namespace: observability
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k6-test-configs
+  namespace: observability
+data:
+  gateway-api-test.yaml: |
+    apiVersion: k6.io/v1alpha1
+    kind: K6
+    metadata:
+      name: gateway-api-test-scheduled
+      namespace: observability
+    spec:
+      parallelism: 1
+      script:
+        configMap:
+          name: gateway-synthetic-tests
+          file: gateway-api-test.js
+      runner:
+        image: grafana/k6:latest
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        env:
+          - name: K6_OUT
+            value: "json=http://prometheus-server.observability.svc.cluster.local:9090/api/v1/write"
+          - name: K6_LOG_LEVEL
+            value: "info"
+          - name: K6_LOG_FORMAT
+            value: "json"
+        args:
+          - "--out"
+          - "json=http://prometheus-server.observability.svc.cluster.local:9090/api/v1/write"
+          - "--log-level"
+          - "info"
+          - "--log-format"
+          - "json"
+  
+  websocket-test.yaml: |
+    apiVersion: k6.io/v1alpha1
+    kind: K6
+    metadata:
+      name: websocket-test-scheduled
+      namespace: observability
+    spec:
+      parallelism: 1
+      script:
+        configMap:
+          name: gateway-synthetic-tests
+          file: websocket-test.js
+      runner:
+        image: grafana/k6:latest
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        env:
+          - name: K6_OUT
+            value: "json=http://prometheus-server.observability.svc.cluster.local:9090/api/v1/write"
+          - name: K6_LOG_LEVEL
+            value: "info"
+          - name: K6_LOG_FORMAT
+            value: "json"
+        args:
+          - "--out"
+          - "json=http://prometheus-server.observability.svc.cluster.local:9090/api/v1/write"
+          - "--log-level"
+          - "info"
+          - "--log-format"
+          - "json"
+  
+  load-test.yaml: |
+    apiVersion: k6.io/v1alpha1
+    kind: K6
+    metadata:
+      name: load-test-scheduled
+      namespace: observability
+    spec:
+      parallelism: 1
+      script:
+        configMap:
+          name: gateway-synthetic-tests
+          file: load-test.js
+      runner:
+        image: grafana/k6:latest
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        env:
+          - name: K6_OUT
+            value: "json=http://prometheus-server.observability.svc.cluster.local:9090/api/v1/write"
+          - name: K6_LOG_LEVEL
+            value: "info"
+          - name: K6_LOG_FORMAT
+            value: "json"
+        args:
+          - "--out"
+          - "json=http://prometheus-server.observability.svc.cluster.local:9090/api/v1/write"
+          - "--log-level"
+          - "info"
+          - "--log-format"
+          - "json"

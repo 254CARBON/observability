@@ -1,0 +1,709 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: capacity-planning
+  namespace: observability
+  labels:
+    app: capacity-planning
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: capacity-planning
+  template:
+    metadata:
+      labels:
+        app: capacity-planning
+    spec:
+      containers:
+        - name: capacity-planning
+          image: python:3.11-slim
+          command: ["python", "/app/capacity_planning.py"]
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: metrics
+              containerPort: 9090
+          env:
+            - name: CONFIG_FILE
+              value: "/etc/capacity-planning/config.yaml"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            requests:
+              memory: 512Mi
+              cpu: 200m
+            limits:
+              memory: 1Gi
+              cpu: 500m
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/capacity-planning
+            - name: app-volume
+              mountPath: /app
+            - name: data-volume
+              mountPath: /var/lib/capacity-planning
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: config-volume
+          configMap:
+            name: capacity-planning-config
+        - name: app-volume
+          configMap:
+            name: capacity-planning-app
+        - name: data-volume
+          emptyDir: {} # For local dev, use PVC for production
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: capacity-planning
+  namespace: observability
+  labels:
+    app: capacity-planning
+spec:
+  type: ClusterIP
+  selector:
+    app: capacity-planning
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: capacity-planning-app
+  namespace: observability
+data:
+  capacity_planning.py: |
+    #!/usr/bin/env python3
+    """
+    Capacity Planning Service
+    
+    This service analyzes resource utilization trends and generates
+    capacity forecasts and optimization recommendations.
+    """
+    
+    import asyncio
+    import json
+    import logging
+    import time
+    from datetime import datetime, timedelta
+    from typing import Dict, List, Any, Optional, Tuple
+    from dataclasses import dataclass, asdict
+    from collections import defaultdict
+    import yaml
+    import requests
+    import numpy as np
+    from scipy import stats
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.preprocessing import StandardScaler
+    from fastapi import FastAPI, HTTPException
+    from fastapi.responses import JSONResponse
+    import uvicorn
+    
+    # Configure logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    
+    @dataclass
+    class Forecast:
+        """Capacity forecast result."""
+        resource: str
+        service: str
+        horizon: str
+        current_value: float
+        forecast_value: float
+        confidence_interval: Tuple[float, float]
+        trend: str
+        growth_rate: float
+        exhaustion_date: Optional[datetime]
+        recommendation: str
+        
+    @dataclass
+    class TrendAnalysis:
+        """Trend analysis result."""
+        resource: str
+        service: str
+        trend_direction: str
+        trend_strength: float
+        seasonal_pattern: bool
+        anomaly_score: float
+        change_points: List[datetime]
+        
+    @dataclass
+    class OptimizationRecommendation:
+        """Optimization recommendation."""
+        type: str
+        resource: str
+        service: str
+        current_utilization: float
+        recommended_utilization: float
+        potential_savings: float
+        implementation_effort: str
+        priority: str
+        
+    class CapacityPlanner:
+        """Capacity planning and forecasting service."""
+        
+        def __init__(self, config: Dict[str, Any]):
+            self.config = config
+            self.prometheus_endpoint = config['data_sources']['prometheus']['endpoint']
+            self.cache = {}
+            self.cache_expiry = {}
+            
+        async def generate_forecasts(self, service: str = None, horizon: str = "24h") -> List[Forecast]:
+            """Generate capacity forecasts."""
+            logger.info(f"Generating forecasts for service: {service}, horizon: {horizon}")
+            
+            # Check cache first
+            cache_key = f"forecast_{service}_{horizon}"
+            if self._is_cache_valid(cache_key):
+                logger.info("Returning cached forecasts")
+                return self.cache[cache_key]
+            
+            forecasts = []
+            
+            # Get services to analyze
+            services = [service] if service else self._get_services()
+            
+            for svc in services:
+                # Get historical data
+                historical_data = await self._get_historical_data(svc, horizon)
+                if not historical_data:
+                    continue
+                
+                # Generate forecasts for each resource
+                for resource in self.config['resources']:
+                    if not self.config['resources'][resource]['enabled']:
+                        continue
+                    
+                    forecast = await self._forecast_resource(svc, resource, historical_data, horizon)
+                    if forecast:
+                        forecasts.append(forecast)
+            
+            # Cache the result
+            self._cache_result(cache_key, forecasts)
+            
+            logger.info(f"Generated {len(forecasts)} forecasts")
+            return forecasts
+            
+        async def analyze_trends(self, service: str = None) -> List[TrendAnalysis]:
+            """Analyze resource utilization trends."""
+            logger.info(f"Analyzing trends for service: {service}")
+            
+            # Check cache first
+            cache_key = f"trends_{service}"
+            if self._is_cache_valid(cache_key):
+                logger.info("Returning cached trend analysis")
+                return self.cache[cache_key]
+            
+            trends = []
+            
+            # Get services to analyze
+            services = [service] if service else self._get_services()
+            
+            for svc in services:
+                # Get historical data
+                historical_data = await self._get_historical_data(svc, "7d")
+                if not historical_data:
+                    continue
+                
+                # Analyze trends for each resource
+                for resource in self.config['resources']:
+                    if not self.config['resources'][resource]['enabled']:
+                        continue
+                    
+                    trend = await self._analyze_resource_trend(svc, resource, historical_data)
+                    if trend:
+                        trends.append(trend)
+            
+            # Cache the result
+            self._cache_result(cache_key, trends)
+            
+            logger.info(f"Analyzed {len(trends)} trends")
+            return trends
+            
+        async def generate_recommendations(self, service: str = None) -> List[OptimizationRecommendation]:
+            """Generate optimization recommendations."""
+            logger.info(f"Generating recommendations for service: {service}")
+            
+            # Check cache first
+            cache_key = f"recommendations_{service}"
+            if self._is_cache_valid(cache_key):
+                logger.info("Returning cached recommendations")
+                return self.cache[cache_key]
+            
+            recommendations = []
+            
+            # Get services to analyze
+            services = [service] if service else self._get_services()
+            
+            for svc in services:
+                # Get current utilization
+                current_utilization = await self._get_current_utilization(svc)
+                if not current_utilization:
+                    continue
+                
+                # Generate recommendations for each resource
+                for resource in self.config['resources']:
+                    if not self.config['resources'][resource]['enabled']:
+                        continue
+                    
+                    recommendation = await self._generate_resource_recommendation(svc, resource, current_utilization)
+                    if recommendation:
+                        recommendations.append(recommendation)
+            
+            # Cache the result
+            self._cache_result(cache_key, recommendations)
+            
+            logger.info(f"Generated {len(recommendations)} recommendations")
+            return recommendations
+            
+        async def _get_historical_data(self, service: str, time_window: str) -> Dict[str, List[float]]:
+            """Get historical data for a service."""
+            try:
+                # Calculate time range
+                end_time = datetime.now()
+                if time_window.endswith('h'):
+                    hours = int(time_window[:-1])
+                    start_time = end_time - timedelta(hours=hours)
+                elif time_window.endswith('d'):
+                    days = int(time_window[:-1])
+                    start_time = end_time - timedelta(days=days)
+                else:
+                    start_time = end_time - timedelta(hours=1)
+                
+                # Query Prometheus for historical data
+                query_params = {
+                    'query': f'up{{service="{service}"}}',
+                    'start': start_time.isoformat(),
+                    'end': end_time.isoformat(),
+                    'step': '1m'
+                }
+                
+                response = requests.get(
+                    f"{self.prometheus_endpoint}/api/v1/query_range",
+                    params=query_params,
+                    timeout=30
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                if 'data' not in data or 'result' not in data['data']:
+                    return {}
+                
+                # Extract time series data
+                historical_data = {}
+                for result in data['data']['result']:
+                    metric_name = result['metric'].get('__name__', 'unknown')
+                    values = [float(point[1]) for point in result['values']]
+                    historical_data[metric_name] = values
+                
+                return historical_data
+                
+            except Exception as e:
+                logger.error(f"Failed to get historical data for {service}: {e}")
+                return {}
+                
+        async def _forecast_resource(self, service: str, resource: str, historical_data: Dict[str, List[float]], horizon: str) -> Optional[Forecast]:
+            """Forecast resource utilization."""
+            try:
+                # Get resource data
+                resource_data = historical_data.get(resource, [])
+                if len(resource_data) < 10:
+                    return None
+                
+                # Convert horizon to hours
+                horizon_hours = self._parse_horizon(horizon)
+                
+                # Apply forecasting algorithm
+                forecast_value, confidence_interval = self._apply_forecasting_algorithm(resource_data, horizon_hours)
+                
+                # Calculate trend
+                trend, growth_rate = self._calculate_trend(resource_data)
+                
+                # Calculate exhaustion date
+                exhaustion_date = self._calculate_exhaustion_date(resource_data, growth_rate)
+                
+                # Generate recommendation
+                recommendation = self._generate_forecast_recommendation(forecast_value, growth_rate, exhaustion_date)
+                
+                return Forecast(
+                    resource=resource,
+                    service=service,
+                    horizon=horizon,
+                    current_value=resource_data[-1],
+                    forecast_value=forecast_value,
+                    confidence_interval=confidence_interval,
+                    trend=trend,
+                    growth_rate=growth_rate,
+                    exhaustion_date=exhaustion_date,
+                    recommendation=recommendation
+                )
+                
+            except Exception as e:
+                logger.error(f"Failed to forecast {resource} for {service}: {e}")
+                return None
+                
+        async def _analyze_resource_trend(self, service: str, resource: str, historical_data: Dict[str, List[float]]) -> Optional[TrendAnalysis]:
+            """Analyze resource trend."""
+            try:
+                # Get resource data
+                resource_data = historical_data.get(resource, [])
+                if len(resource_data) < 20:
+                    return None
+                
+                # Calculate trend direction and strength
+                trend_direction, trend_strength = self._calculate_trend_strength(resource_data)
+                
+                # Detect seasonal patterns
+                seasonal_pattern = self._detect_seasonal_pattern(resource_data)
+                
+                # Calculate anomaly score
+                anomaly_score = self._calculate_anomaly_score(resource_data)
+                
+                # Detect change points
+                change_points = self._detect_change_points(resource_data)
+                
+                return TrendAnalysis(
+                    resource=resource,
+                    service=service,
+                    trend_direction=trend_direction,
+                    trend_strength=trend_strength,
+                    seasonal_pattern=seasonal_pattern,
+                    anomaly_score=anomaly_score,
+                    change_points=change_points
+                )
+                
+            except Exception as e:
+                logger.error(f"Failed to analyze trend for {resource} in {service}: {e}")
+                return None
+                
+        async def _generate_resource_recommendation(self, service: str, resource: str, current_utilization: Dict[str, float]) -> Optional[OptimizationRecommendation]:
+            """Generate optimization recommendation for a resource."""
+            try:
+                current_value = current_utilization.get(resource, 0)
+                
+                # Check if optimization is needed
+                if current_value < self.config['optimization']['resource_optimization']['right_sizing']['min_utilization']:
+                    # Underutilized - recommend downsizing
+                    recommended_value = current_value * 0.8  # 20% reduction
+                    potential_savings = (current_value - recommended_value) * self._get_resource_cost(resource)
+                    implementation_effort = "low"
+                    priority = "medium"
+                    
+                elif current_value > self.config['optimization']['resource_optimization']['right_sizing']['max_utilization']:
+                    # Overutilized - recommend scaling
+                    recommended_value = current_value * 1.2  # 20% increase
+                    potential_savings = 0  # No savings, but prevents issues
+                    implementation_effort = "high"
+                    priority = "high"
+                    
+                else:
+                    # Well utilized - no recommendation
+                    return None
+                
+                return OptimizationRecommendation(
+                    type="right_sizing",
+                    resource=resource,
+                    service=service,
+                    current_utilization=current_value,
+                    recommended_utilization=recommended_value,
+                    potential_savings=potential_savings,
+                    implementation_effort=implementation_effort,
+                    priority=priority
+                )
+                
+            except Exception as e:
+                logger.error(f"Failed to generate recommendation for {resource} in {service}: {e}")
+                return None
+                
+        def _apply_forecasting_algorithm(self, data: List[float], horizon_hours: int) -> Tuple[float, Tuple[float, float]]:
+            """Apply forecasting algorithm to data."""
+            # Use linear regression for simple forecasting
+            x = np.arange(len(data))
+            y = np.array(data)
+            
+            # Fit linear regression
+            slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+            
+            # Forecast future value
+            future_x = len(data) + horizon_hours
+            forecast_value = slope * future_x + intercept
+            
+            # Calculate confidence interval
+            confidence_interval = (forecast_value - 2 * std_err, forecast_value + 2 * std_err)
+            
+            return forecast_value, confidence_interval
+            
+        def _calculate_trend(self, data: List[float]) -> Tuple[str, float]:
+            """Calculate trend direction and growth rate."""
+            if len(data) < 2:
+                return "stable", 0.0
+            
+            # Calculate growth rate
+            growth_rate = (data[-1] - data[0]) / data[0] if data[0] != 0 else 0
+            
+            # Determine trend direction
+            if growth_rate > 0.1:
+                trend = "increasing"
+            elif growth_rate < -0.1:
+                trend = "decreasing"
+            else:
+                trend = "stable"
+            
+            return trend, growth_rate
+            
+        def _calculate_trend_strength(self, data: List[float]) -> Tuple[str, float]:
+            """Calculate trend strength."""
+            if len(data) < 2:
+                return "stable", 0.0
+            
+            # Calculate correlation coefficient
+            x = np.arange(len(data))
+            y = np.array(data)
+            correlation, _ = stats.pearsonr(x, y)
+            
+            # Determine trend direction
+            if correlation > 0.5:
+                trend_direction = "increasing"
+            elif correlation < -0.5:
+                trend_direction = "decreasing"
+            else:
+                trend_direction = "stable"
+            
+            return trend_direction, abs(correlation)
+            
+        def _detect_seasonal_pattern(self, data: List[float]) -> bool:
+            """Detect seasonal patterns in data."""
+            if len(data) < 24:  # Need at least 24 data points
+                return False
+            
+            # Simple seasonal detection using autocorrelation
+            # This is a simplified approach - in production, use more sophisticated methods
+            return False
+            
+        def _calculate_anomaly_score(self, data: List[float]) -> float:
+            """Calculate anomaly score for data."""
+            if len(data) < 10:
+                return 0.0
+            
+            # Calculate z-score for the last data point
+            mean = np.mean(data[:-1])
+            std = np.std(data[:-1])
+            
+            if std == 0:
+                return 0.0
+            
+            z_score = abs((data[-1] - mean) / std)
+            return min(z_score / 3.0, 1.0)  # Normalize to 0-1
+            
+        def _detect_change_points(self, data: List[float]) -> List[datetime]:
+            """Detect change points in data."""
+            # Simplified change point detection
+            # In production, use more sophisticated algorithms
+            change_points = []
+            
+            if len(data) < 20:
+                return change_points
+            
+            # Look for significant changes in slope
+            for i in range(10, len(data) - 10):
+                before_mean = np.mean(data[i-10:i])
+                after_mean = np.mean(data[i:i+10])
+                
+                if abs(after_mean - before_mean) > np.std(data) * 2:
+                    change_points.append(datetime.now() - timedelta(hours=len(data)-i))
+            
+            return change_points
+            
+        def _calculate_exhaustion_date(self, data: List[float], growth_rate: float) -> Optional[datetime]:
+            """Calculate resource exhaustion date."""
+            if growth_rate <= 0:
+                return None
+            
+            # Calculate time to reach 100% utilization
+            current_value = data[-1]
+            if current_value >= 1.0:
+                return datetime.now()
+            
+            time_to_exhaustion = (1.0 - current_value) / growth_rate
+            return datetime.now() + timedelta(hours=time_to_exhaustion)
+            
+        def _generate_forecast_recommendation(self, forecast_value: float, growth_rate: float, exhaustion_date: Optional[datetime]) -> str:
+            """Generate recommendation based on forecast."""
+            if exhaustion_date and exhaustion_date < datetime.now() + timedelta(days=7):
+                return "URGENT: Resource will be exhausted within 7 days. Scale immediately."
+            elif exhaustion_date and exhaustion_date < datetime.now() + timedelta(days=30):
+                return "WARNING: Resource will be exhausted within 30 days. Plan scaling."
+            elif growth_rate > 0.1:
+                return "INFO: High growth rate detected. Monitor closely."
+            elif forecast_value > 0.8:
+                return "WARNING: Forecasted utilization is high. Consider scaling."
+            else:
+                return "OK: Resource utilization is within normal range."
+                
+        def _get_resource_cost(self, resource: str) -> float:
+            """Get cost per unit for a resource."""
+            cost_config = self.config['optimization']['cost_optimization']['cost_analysis']
+            
+            if resource == 'cpu':
+                return cost_config['cpu_cost_per_hour']
+            elif resource == 'memory':
+                return cost_config['memory_cost_per_gb_hour']
+            elif resource == 'disk':
+                return cost_config['storage_cost_per_gb_hour']
+            else:
+                return 0.0
+                
+        def _parse_horizon(self, horizon: str) -> int:
+            """Parse horizon string to hours."""
+            if horizon.endswith('h'):
+                return int(horizon[:-1])
+            elif horizon.endswith('d'):
+                return int(horizon[:-1]) * 24
+            else:
+                return 1
+                
+        def _get_services(self) -> List[str]:
+            """Get list of services to analyze."""
+            return list(self.config['services'].keys())
+            
+        async def _get_current_utilization(self, service: str) -> Dict[str, float]:
+            """Get current resource utilization for a service."""
+            try:
+                # Query Prometheus for current metrics
+                query = f'up{{service="{service}"}}'
+                
+                response = requests.get(
+                    f"{self.prometheus_endpoint}/api/v1/query",
+                    params={'query': query},
+                    timeout=10
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                if 'data' not in data or 'result' not in data['data']:
+                    return {}
+                
+                # Extract current values
+                current_utilization = {}
+                for result in data['data']['result']:
+                    metric_name = result['metric'].get('__name__', 'unknown')
+                    value = float(result['value'][1])
+                    current_utilization[metric_name] = value
+                
+                return current_utilization
+                
+            except Exception as e:
+                logger.error(f"Failed to get current utilization for {service}: {e}")
+                return {}
+                
+        def _is_cache_valid(self, cache_key: str) -> bool:
+            """Check if cache entry is valid."""
+            if cache_key not in self.cache:
+                return False
+            
+            if cache_key not in self.cache_expiry:
+                return False
+            
+            return datetime.now() < self.cache_expiry[cache_key]
+            
+        def _cache_result(self, cache_key: str, result: Any):
+            """Cache the result."""
+            self.cache[cache_key] = result
+            cache_duration = timedelta(minutes=10)  # Default cache duration
+            self.cache_expiry[cache_key] = datetime.now() + cache_duration
+            
+    # FastAPI application
+    app = FastAPI(title="Capacity Planning API")
+    
+    # Global planner instance
+    planner = None
+    
+    @app.on_event("startup")
+    async def startup_event():
+        """Initialize the capacity planner."""
+        global planner
+        try:
+            with open('/etc/capacity-planning/config.yaml', 'r') as f:
+                config = yaml.safe_load(f)
+            planner = CapacityPlanner(config)
+            logger.info("Capacity planner initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize capacity planner: {e}")
+            raise
+    
+    @app.get("/health")
+    async def health_check():
+        """Health check endpoint."""
+        return {"status": "healthy", "service": "capacity-planning"}
+    
+    @app.get("/ready")
+    async def readiness_check():
+        """Readiness check endpoint."""
+        if planner is None:
+            raise HTTPException(status_code=503, detail="Service not ready")
+        return {"status": "ready", "service": "capacity-planning"}
+    
+    @app.get("/api/v1/forecasts")
+    async def get_forecasts(service: str = None, horizon: str = "24h"):
+        """Get capacity forecasts."""
+        if planner is None:
+            raise HTTPException(status_code=503, detail="Service not ready")
+        
+        try:
+            forecasts = await planner.generate_forecasts(service, horizon)
+            return JSONResponse(content=[asdict(f) for f in forecasts], default=str)
+        except Exception as e:
+            logger.error(f"Failed to generate forecasts: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/v1/trends")
+    async def get_trends(service: str = None):
+        """Get trend analysis."""
+        if planner is None:
+            raise HTTPException(status_code=503, detail="Service not ready")
+        
+        try:
+            trends = await planner.analyze_trends(service)
+            return JSONResponse(content=[asdict(t) for t in trends], default=str)
+        except Exception as e:
+            logger.error(f"Failed to analyze trends: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/v1/recommendations")
+    async def get_recommendations(service: str = None):
+        """Get optimization recommendations."""
+        if planner is None:
+            raise HTTPException(status_code=503, detail="Service not ready")
+        
+        try:
+            recommendations = await planner.generate_recommendations(service)
+            return JSONResponse(content=[asdict(r) for r in recommendations], default=str)
+        except Exception as e:
+            logger.error(f"Failed to generate recommendations: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    if __name__ == "__main__":
+        uvicorn.run(app, host="0.0.0.0", port=8080)

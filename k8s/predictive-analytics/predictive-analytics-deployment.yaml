@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: predictive-analytics
+  namespace: observability
+  labels:
+    app: predictive-analytics
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: predictive-analytics
+  template:
+    metadata:
+      labels:
+        app: predictive-analytics
+    spec:
+      containers:
+        - name: predictive-analytics
+          image: busybox # Placeholder image, replace with actual service image
+          command: ["/bin/sh", "-c", "echo 'Predictive Analytics Service running (placeholder)'; sleep 3600"] # Placeholder command
+          ports:
+            - containerPort: 8080 # For exposing API
+            - containerPort: 9090 # For exposing metrics
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/predictive-analytics
+            - name: model-storage
+              mountPath: /var/lib/predictive-analytics/models
+          env:
+            - name: PREDICTIVE_CONFIG_PATH
+              value: "/etc/predictive-analytics/config.yaml"
+            - name: PROMETHEUS_ENDPOINT
+              value: "http://prometheus-server.observability.svc.cluster.local:9090"
+            - name: GRAFANA_ENDPOINT
+              value: "http://grafana.observability.svc.cluster.local:3000"
+            - name: ALERTMANAGER_ENDPOINT
+              value: "http://alertmanager.observability.svc.cluster.local:9093"
+            - name: MODEL_STORAGE_PATH
+              value: "/var/lib/predictive-analytics/models"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+      volumes:
+        - name: config-volume
+          configMap:
+            name: predictive-analytics-config
+        - name: model-storage
+          persistentVolumeClaim:
+            claimName: predictive-analytics-models
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: predictive-analytics
+  namespace: observability
+  labels:
+    app: predictive-analytics
+spec:
+  type: ClusterIP
+  selector:
+    app: predictive-analytics
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+      name: api
+    - protocol: TCP
+      port: 9090
+      targetPort: 9090
+      name: metrics
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: predictive-analytics-models
+  namespace: observability
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+# ServiceMonitor for predictive analytics metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: predictive-analytics
+  namespace: observability
+  labels:
+    app: predictive-analytics
+spec:
+  selector:
+    matchLabels:
+      app: predictive-analytics
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics

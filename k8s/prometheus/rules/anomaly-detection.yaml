@@ -1,0 +1,193 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-anomaly-rules
+  namespace: observability
+data:
+  anomaly-detection.yaml: |
+    groups:
+    - name: anomaly-detection
+      rules:
+      # Request Rate Anomaly Detection
+      - record: gateway:http_requests:anomaly_score
+        expr: |
+          (
+            gateway:http_requests:rate5m > gateway:http_requests:rate15m * 2
+            or
+            gateway:http_requests:rate5m < gateway:http_requests:rate15m * 0.5
+          )
+        labels:
+          service: gateway
+          anomaly_type: "request_rate"
+      
+      # Latency Anomaly Detection
+      - record: gateway:http_request_duration:anomaly_score
+        expr: |
+          (
+            gateway:http_request_duration_seconds:p95 > 
+            quantile_over_time(0.95, gateway:http_request_duration_seconds:p95[1h]) * 2
+          )
+        labels:
+          service: gateway
+          anomaly_type: "latency"
+      
+      # Error Rate Anomaly Detection
+      - record: gateway:http_errors:anomaly_score
+        expr: |
+          (
+            gateway:http_error_rate:ratio5m > 
+            quantile_over_time(0.95, gateway:http_error_rate:ratio5m[1h]) * 3
+          )
+        labels:
+          service: gateway
+          anomaly_type: "error_rate"
+      
+      # Data Pipeline Anomaly Detection
+      - record: ingestion:processing_lag:anomaly_score
+        expr: |
+          (
+            time() - ingestion_latest_processed_timestamp > 
+            quantile_over_time(0.95, time() - ingestion_latest_processed_timestamp[1h]) * 2
+          )
+        labels:
+          service: ingestion
+          anomaly_type: "processing_lag"
+      
+      # ML Inference Anomaly Detection
+      - record: ml:inference_latency:anomaly_score
+        expr: |
+          (
+            ml:inference_latency:p95 > 
+            quantile_over_time(0.95, ml:inference_latency:p95[1h]) * 2
+          )
+        labels:
+          service: ml
+          anomaly_type: "inference_latency"
+      
+      # Infrastructure Anomaly Detection
+      - record: infra:cpu_usage:anomaly_score
+        expr: |
+          (
+            rate(node_cpu_seconds_total{mode!="idle"}[5m]) > 
+            quantile_over_time(0.95, rate(node_cpu_seconds_total{mode!="idle"}[5m])[1h]) * 1.5
+          )
+        labels:
+          service: infrastructure
+          anomaly_type: "cpu_usage"
+      
+      - record: infra:memory_usage:anomaly_score
+        expr: |
+          (
+            (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 
+            quantile_over_time(0.95, (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes[1h]) * 1.3
+          )
+        labels:
+          service: infrastructure
+          anomaly_type: "memory_usage"
+      
+      # Database Anomaly Detection
+      - record: database:query_duration:anomaly_score
+        expr: |
+          (
+            infra:clickhouse_query_duration:p95 > 
+            quantile_over_time(0.95, infra:clickhouse_query_duration:p95[1h]) * 2
+          )
+        labels:
+          service: clickhouse
+          anomaly_type: "query_duration"
+      
+      # Cache Anomaly Detection
+      - record: cache:miss_ratio:anomaly_score
+        expr: |
+          (
+            rate(enrichment_cache_misses_total[5m]) / 
+            (rate(enrichment_cache_hits_total[5m]) + rate(enrichment_cache_misses_total[5m])) > 
+            quantile_over_time(0.95, rate(enrichment_cache_misses_total[5m]) / 
+            (rate(enrichment_cache_hits_total[5m]) + rate(enrichment_cache_misses_total[5m]))[1h]) * 2
+          )
+        labels:
+          service: cache
+          anomaly_type: "miss_ratio"
+      
+      # Statistical Anomaly Detection (Z-Score)
+      - record: gateway:http_requests:z_score
+        expr: |
+          (
+            gateway:http_requests:rate5m - 
+            avg_over_time(gateway:http_requests:rate5m[1h])
+          ) / 
+          stddev_over_time(gateway:http_requests:rate5m[1h])
+        labels:
+          service: gateway
+          anomaly_type: "z_score"
+      
+      # Moving Average Anomaly Detection
+      - record: gateway:http_requests:ma_anomaly
+        expr: |
+          (
+            gateway:http_requests:rate5m > 
+            avg_over_time(gateway:http_requests:rate5m[30m]) * 2
+            or
+            gateway:http_requests:rate5m < 
+            avg_over_time(gateway:http_requests:rate5m[30m]) * 0.5
+          )
+        labels:
+          service: gateway
+          anomaly_type: "moving_average"
+      
+      # Seasonal Anomaly Detection (compare with same time yesterday)
+      - record: gateway:http_requests:seasonal_anomaly
+        expr: |
+          (
+            gateway:http_requests:rate5m > 
+            gateway:http_requests:rate5m offset 1d * 2
+            or
+            gateway:http_requests:rate5m < 
+            gateway:http_requests:rate5m offset 1d * 0.5
+          )
+        labels:
+          service: gateway
+          anomaly_type: "seasonal"
+      
+      # Composite Anomaly Score
+      - record: system:anomaly_score:composite
+        expr: |
+          (
+            gateway:http_requests:anomaly_score * 0.3 +
+            gateway:http_request_duration:anomaly_score * 0.3 +
+            gateway:http_errors:anomaly_score * 0.4
+          )
+        labels:
+          service: gateway
+          anomaly_type: "composite"
+      
+      # Anomaly Severity Classification
+      - record: system:anomaly_severity
+        expr: |
+          (
+            system:anomaly_score:composite > 2
+          ) * 3 +
+          (
+            system:anomaly_score:composite > 1 and system:anomaly_score:composite <= 2
+          ) * 2 +
+          (
+            system:anomaly_score:composite > 0.5 and system:anomaly_score:composite <= 1
+          ) * 1
+        labels:
+          service: gateway
+          severity: "high"
+      
+      # Anomaly Trend Detection
+      - record: system:anomaly_trend
+        expr: |
+          (
+            system:anomaly_score:composite > 
+            system:anomaly_score:composite offset 5m
+          ) * 1 +
+          (
+            system:anomaly_score:composite < 
+            system:anomaly_score:composite offset 5m
+          ) * -1
+        labels:
+          service: gateway
+          trend: "increasing"

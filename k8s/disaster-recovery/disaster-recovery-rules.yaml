@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: disaster-recovery-rules
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: recording-rules
+spec:
+  groups:
+    - name: disaster.recovery.rules
+      rules:
+        - record: backup_service_up
+          expr: up{job="backup-service"}
+        - record: replication_lag_seconds
+          expr: time() - backup_last_successful_timestamp
+        - record: cross_region_connectivity
+          expr: up{job=~"replication-.*"}
+        - record: backup_storage_usage_percent
+          expr: (backup_storage_used_bytes / backup_storage_total_bytes) * 100

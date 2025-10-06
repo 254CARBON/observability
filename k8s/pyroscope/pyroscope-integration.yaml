@@ -1,0 +1,139 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pyroscope-integration-config
+  namespace: observability
+data:
+  integration.yaml: |
+    # Pyroscope Integration Configuration
+    # This configures Pyroscope to integrate with OpenTelemetry traces and Prometheus metrics
+    
+    # Trace-to-Profile integration
+    trace_to_profile:
+      enabled: true
+      tempo_endpoint: "http://tempo.observability.svc.cluster.local:3200"
+      query_template: |
+        {
+          "query": "service=\\"{{.service.name}}\\" and version=\\"{{.service.version}}\\"",
+          "start": "{{.start}}",
+          "end": "{{.end}}"
+        }
+      correlation_fields:
+        - "service.name"
+        - "service.version"
+        - "deployment.environment"
+        - "trace_id"
+        
+    # Profile-to-Metric integration
+    profile_to_metric:
+      enabled: true
+      prometheus_endpoint: "http://prometheus-server.observability.svc.cluster.local:9090"
+      metric_mappings:
+        cpu_samples:
+          metric_name: "pyroscope_cpu_samples_total"
+          labels:
+            - "service"
+            - "environment"
+            - "version"
+        memory_samples:
+          metric_name: "pyroscope_memory_samples_total"
+          labels:
+            - "service"
+            - "environment"
+            - "version"
+        storage_usage:
+          metric_name: "pyroscope_storage_bytes"
+          labels:
+            - "service"
+            - "environment"
+            
+    # Span Profile integration
+    span_profiles:
+      enabled: true
+      otel_collector_endpoint: "http://otel-collector.observability.svc.cluster.local:4317"
+      profile_types:
+        - "cpu"
+        - "memory"
+        - "goroutines"
+      sampling_rates:
+        continuous: 0.01  # 1% continuous sampling
+        on_demand: 1.0   # 100% on-demand sampling
+        error_traces: 1.0 # 100% sampling for error traces
+        slow_traces: 1.0  # 100% sampling for slow traces (>1s)
+        
+    # Performance optimization
+    optimization:
+      compression:
+        enabled: true
+        algorithm: "gzip"
+        level: 6
+      deduplication:
+        enabled: true
+        similarity_threshold: 0.95
+      aggregation:
+        enabled: true
+        time_window: "1m"
+        aggregation_functions:
+          - "sum"
+          - "avg"
+          - "p95"
+          - "p99"
+          
+    # Cost management
+    cost_management:
+      retention_policies:
+        default: "7d"
+        high_value: "30d"  # Keep high-value profiles longer
+        low_value: "1d"    # Aggressive cleanup for low-value profiles
+      storage_limits:
+        max_storage_per_service: "1GB"
+        max_storage_total: "10GB"
+        cleanup_threshold: 0.8  # Start cleanup at 80% usage
+      sampling_strategies:
+        adaptive_sampling:
+          enabled: true
+          base_rate: 0.01
+          max_rate: 0.1
+          min_rate: 0.001
+          adjustment_factor: 1.5
+        workload_based_sampling:
+          enabled: true
+          high_load_threshold: 0.8
+          low_load_threshold: 0.2
+          high_load_rate: 0.05
+          low_load_rate: 0.001
+          
+    # Alerting integration
+    alerting:
+      enabled: true
+      alertmanager_endpoint: "http://alertmanager.observability.svc.cluster.local:9093"
+      alert_rules:
+        high_overhead:
+          threshold: 2.0  # 2% CPU overhead
+          severity: "warning"
+          duration: "5m"
+        storage_limit:
+          threshold: 1073741824  # 1GB
+          severity: "critical"
+          duration: "1m"
+        compression_failure:
+          threshold: 0.9  # 90% compression ratio
+          severity: "warning"
+          duration: "5m"
+          
+    # Monitoring and observability
+    monitoring:
+      metrics:
+        enabled: true
+        endpoint: "http://prometheus-server.observability.svc.cluster.local:9090"
+        metric_prefix: "pyroscope_"
+      logging:
+        enabled: true
+        level: "info"
+        format: "json"
+        output: "stdout"
+      health_checks:
+        enabled: true
+        endpoint: "/health"
+        interval: "30s"
+        timeout: "5s"

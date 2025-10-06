@@ -1,0 +1,44 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: disaster-recovery-alerts
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: alert-rules
+spec:
+  groups:
+    - name: disaster.recovery.alerts
+      rules:
+        - alert: BackupServiceDown
+          expr: backup_service_up == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Backup service is down"
+            description: "The backup service has been down for more than 5 minutes."
+        - alert: HighReplicationLag
+          expr: replication_lag_seconds > 300
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High replication lag detected"
+            description: "Replication lag is {{ $value }}s, exceeding threshold of 300s."
+        - alert: CrossRegionConnectivityLost
+          expr: cross_region_connectivity == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Cross-region connectivity lost"
+            description: "Cross-region replication connectivity has been lost."
+        - alert: BackupStorageNearFull
+          expr: backup_storage_usage_percent > 85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Backup storage near capacity"
+            description: "Backup storage is {{ $value }}% full."

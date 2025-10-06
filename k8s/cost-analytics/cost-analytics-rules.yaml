@@ -1,0 +1,257 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cost-analytics-recording-rules
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: recording-rules
+spec:
+  groups:
+    - name: cost.analytics.rules
+      rules:
+        # Cost aggregation rules
+        - record: cost_analytics_total_cost:sum
+          expr: sum by (service) (cost_analytics_total_cost)
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_total_cost:rate5m
+          expr: sum by (service) (rate(cost_analytics_total_cost[5m]))
+          labels:
+            component: cost-analytics
+            
+        # Cost efficiency rules
+        - record: cost_analytics_efficiency:avg
+          expr: avg by (metric_type) (cost_analytics_efficiency)
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_efficiency:max
+          expr: max by (metric_type) (cost_analytics_efficiency)
+          labels:
+            component: cost-analytics
+            
+        # Optimization savings rules
+        - record: cost_analytics_savings:sum
+          expr: sum by (optimization_type) (cost_analytics_savings)
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_savings:rate1h
+          expr: sum by (optimization_type) (rate(cost_analytics_savings[1h]))
+          labels:
+            component: cost-analytics
+            
+        # Cost trend rules
+        - record: cost_analytics_cost_trend:slope
+          expr: |
+            (
+              cost_analytics_total_cost:sum
+              -
+              cost_analytics_total_cost:sum offset 1h
+            ) / 3600
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_cost_trend:growth_rate
+          expr: |
+            (
+              cost_analytics_total_cost:sum
+              -
+              cost_analytics_total_cost:sum offset 24h
+            ) / cost_analytics_total_cost:sum offset 24h
+          labels:
+            component: cost-analytics
+            
+        # Cost per resource rules
+        - record: cost_analytics_cost_per_cpu_core
+          expr: |
+            cost_analytics_total_cost:sum{service="infrastructure"}
+            /
+            avg by (instance) (node_cpu_seconds_total{mode!="idle"})
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_cost_per_gb_memory
+          expr: |
+            cost_analytics_total_cost:sum{service="infrastructure"}
+            /
+            avg by (instance) ((node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / 1024/1024/1024)
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_cost_per_request
+          expr: |
+            cost_analytics_total_cost:sum{service="gateway"}
+            /
+            sum(rate(gateway_http_requests_total[5m]))
+          labels:
+            component: cost-analytics
+            
+        # Cost allocation rules
+        - record: cost_analytics_cost_allocation:by_service
+          expr: |
+            cost_analytics_total_cost:sum
+            /
+            sum(cost_analytics_total_cost:sum)
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_cost_allocation:by_tenant
+          expr: |
+            cost_analytics_total_cost:sum by (tenant)
+            /
+            sum by (tenant) (cost_analytics_total_cost:sum by (tenant))
+          labels:
+            component: cost-analytics
+            
+        # Cost optimization rules
+        - record: cost_analytics_optimization_potential:right_sizing
+          expr: |
+            cost_analytics_savings:sum{optimization_type="right_sizing"}
+            /
+            cost_analytics_total_cost:sum
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_optimization_potential:reserved_instances
+          expr: |
+            cost_analytics_savings:sum{optimization_type="reserved_instances"}
+            /
+            cost_analytics_total_cost:sum
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_optimization_potential:auto_scaling
+          expr: |
+            cost_analytics_savings:sum{optimization_type="auto_scaling"}
+            /
+            cost_analytics_total_cost:sum
+          labels:
+            component: cost-analytics
+            
+        # Cost anomaly detection rules
+        - record: cost_analytics_anomaly_score
+          expr: |
+            abs(
+              cost_analytics_total_cost:sum
+              -
+              cost_analytics_total_cost:sum offset 1h
+            ) / cost_analytics_total_cost:sum offset 1h
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_anomaly_threshold
+          expr: 0.2  # 20% threshold for anomaly detection
+          labels:
+            component: cost-analytics
+            
+        # Cost forecasting rules (simplified)
+        - record: cost_analytics_forecast:next_hour
+          expr: |
+            cost_analytics_total_cost:sum
+            +
+            cost_analytics_cost_trend:slope * 3600
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_forecast:next_day
+          expr: |
+            cost_analytics_total_cost:sum
+            +
+            cost_analytics_cost_trend:slope * 86400
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_forecast:next_week
+          expr: |
+            cost_analytics_total_cost:sum
+            +
+            cost_analytics_cost_trend:slope * 604800
+          labels:
+            component: cost-analytics
+            
+        # Cost budget rules
+        - record: cost_analytics_budget:daily
+          expr: 100.0  # $100 daily budget
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_budget:weekly
+          expr: 700.0  # $700 weekly budget
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_budget:monthly
+          expr: 3000.0  # $3000 monthly budget
+          labels:
+            component: cost-analytics
+            
+        # Cost utilization rules
+        - record: cost_analytics_budget_utilization:daily
+          expr: |
+            cost_analytics_total_cost:sum
+            /
+            cost_analytics_budget:daily
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_budget_utilization:weekly
+          expr: |
+            cost_analytics_total_cost:sum
+            /
+            cost_analytics_budget:weekly
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_budget_utilization:monthly
+          expr: |
+            cost_analytics_total_cost:sum
+            /
+            cost_analytics_budget:monthly
+          labels:
+            component: cost-analytics
+            
+        # Cost efficiency rules
+        - record: cost_analytics_efficiency_score
+          expr: |
+            (
+              cost_analytics_efficiency:avg{metric_type="cost_per_request"}
+              +
+              cost_analytics_efficiency:avg{metric_type="cost_per_gb_processed"}
+              +
+              cost_analytics_efficiency:avg{metric_type="cost_per_user"}
+            ) / 3
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_efficiency_threshold
+          expr: 0.1  # $0.10 efficiency threshold
+          labels:
+            component: cost-analytics
+            
+        # Cost correlation rules
+        - record: cost_analytics_cost_correlation:requests
+          expr: |
+            cost_analytics_total_cost:sum{service="gateway"}
+            /
+            sum(rate(gateway_http_requests_total[5m]))
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_cost_correlation:errors
+          expr: |
+            cost_analytics_total_cost:sum{service="gateway"}
+            /
+            sum(rate(gateway_http_requests_total{status=~"5.."}[5m]))
+          labels:
+            component: cost-analytics
+            
+        - record: cost_analytics_cost_correlation:latency
+          expr: |
+            cost_analytics_total_cost:sum{service="gateway"}
+            /
+            histogram_quantile(0.95, sum(rate(gateway_http_request_duration_seconds_bucket[5m])) by (le))
+          labels:
+            component: cost-analytics

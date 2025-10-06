@@ -1,0 +1,574 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: k6s.k6.io
+spec:
+  group: k6.io
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              parallelism:
+                type: integer
+                minimum: 1
+                default: 1
+              script:
+                type: object
+                properties:
+                  configMap:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      file:
+                        type: string
+                        default: "script.js"
+              runner:
+                type: object
+                properties:
+                  image:
+                    type: string
+                    default: "grafana/k6:latest"
+                  resources:
+                    type: object
+                    properties:
+                      requests:
+                        type: object
+                        properties:
+                          memory:
+                            type: string
+                          cpu:
+                            type: string
+                      limits:
+                        type: object
+                        properties:
+                          memory:
+                            type: string
+                          cpu:
+                            type: string
+                  env:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        value:
+                          type: string
+                        valueFrom:
+                          type: object
+                  args:
+                    type: array
+                    items:
+                      type: string
+                  nodeSelector:
+                    type: object
+                  tolerations:
+                    type: array
+                    items:
+                      type: object
+                  affinity:
+                    type: object
+              starter:
+                type: object
+                properties:
+                  image:
+                    type: string
+                    default: "grafana/k6:latest"
+                  resources:
+                    type: object
+                    properties:
+                      requests:
+                        type: object
+                        properties:
+                          memory:
+                            type: string
+                          cpu:
+                            type: string
+                      limits:
+                        type: object
+                        properties:
+                          memory:
+                            type: string
+                          cpu:
+                            type: string
+                  env:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        value:
+                          type: string
+                        valueFrom:
+                          type: object
+                  args:
+                    type: array
+                    items:
+                      type: string
+                  nodeSelector:
+                    type: object
+                  tolerations:
+                    type: array
+                    items:
+                      type: object
+                  affinity:
+                    type: object
+              separate:
+                type: boolean
+                default: false
+              quiet:
+                type: boolean
+                default: false
+              logLevel:
+                type: string
+                enum: ["debug", "info", "warn", "error"]
+                default: "info"
+              logFormat:
+                type: string
+                enum: ["json", "raw"]
+                default: "json"
+              logOutput:
+                type: string
+                default: "stderr"
+              logRequests:
+                type: string
+                enum: ["full", "errors", "none"]
+                default: "errors"
+              logResponses:
+                type: string
+                enum: ["full", "errors", "none"]
+                default: "errors"
+              logMetrics:
+                type: string
+                enum: ["full", "summary", "none"]
+                default: "summary"
+              logTraces:
+                type: string
+                enum: ["full", "errors", "none"]
+                default: "errors"
+              logLevels:
+                type: object
+                properties:
+                  debug:
+                    type: string
+                  info:
+                    type: string
+                  warn:
+                    type: string
+                  error:
+                    type: string
+              logPrefix:
+                type: string
+                default: "k6"
+              logNoColor:
+                type: boolean
+                default: false
+              logNoSummary:
+                type: boolean
+                default: false
+              logNoProgress:
+                type: boolean
+                default: false
+              logVerbose:
+                type: boolean
+                default: false
+              logDebug:
+                type: boolean
+                default: false
+              logTrace:
+                type: boolean
+                default: false
+              logProfile:
+                type: string
+              logProfileOutput:
+                type: string
+              logProfileFormat:
+                type: string
+                enum: ["json", "raw"]
+                default: "json"
+              logProfilePeriod:
+                type: string
+                default: "1s"
+              logProfileThreshold:
+                type: string
+                default: "100ms"
+              logProfileTop:
+                type: integer
+                default: 10
+              logProfileSort:
+                type: string
+                enum: ["cum", "self"]
+                default: "cum"
+              logProfileInclude:
+                type: string
+              logProfileExclude:
+                type: string
+              logProfileOnly:
+                type: string
+              logProfileIgnore:
+                type: string
+              logProfileMin:
+                type: string
+                default: "1ms"
+              logProfileMax:
+                type: string
+                default: "1s"
+              logProfileMean:
+                type: string
+                default: "10ms"
+              logProfileStdDev:
+                type: string
+                default: "5ms"
+              logProfileP50:
+                type: string
+                default: "10ms"
+              logProfileP90:
+                type: string
+                default: "50ms"
+              logProfileP95:
+                type: string
+                default: "100ms"
+              logProfileP99:
+                type: string
+                default: "500ms"
+              logProfileP99_9:
+                type: string
+                default: "1s"
+              logProfileP99_99:
+                type: string
+                default: "5s"
+              logProfileP99_999:
+                type: string
+                default: "10s"
+              logProfileP100:
+                type: string
+                default: "1s"
+              logProfileCount:
+                type: integer
+                default: 100
+              logProfileRate:
+                type: string
+                default: "1/s"
+              logProfileSum:
+                type: string
+                default: "1s"
+              logProfileMinRate:
+                type: string
+                default: "0.1/s"
+              logProfileMaxRate:
+                type: string
+                default: "10/s"
+              logProfileMeanRate:
+                type: string
+                default: "1/s"
+              logProfileStdDevRate:
+                type: string
+                default: "0.5/s"
+              logProfileP50Rate:
+                type: string
+                default: "1/s"
+              logProfileP90Rate:
+                type: string
+                default: "5/s"
+              logProfileP95Rate:
+                type: string
+                default: "10/s"
+              logProfileP99Rate:
+                type: string
+                default: "50/s"
+              logProfileP99_9Rate:
+                type: string
+                default: "100/s"
+              logProfileP99_99Rate:
+                type: string
+                default: "500/s"
+              logProfileP99_999Rate:
+                type: string
+                default: "1000/s"
+              logProfileP100Rate:
+                type: string
+                default: "1000/s"
+              logProfileCountRate:
+                type: integer
+                default: 100
+              logProfileSumRate:
+                type: string
+                default: "1/s"
+              logProfileMinSum:
+                type: string
+                default: "1s"
+              logProfileMaxSum:
+                type: string
+                default: "10s"
+              logProfileMeanSum:
+                type: string
+                default: "5s"
+              logProfileStdDevSum:
+                type: string
+                default: "2s"
+              logProfileP50Sum:
+                type: string
+                default: "5s"
+              logProfileP90Sum:
+                type: string
+                default: "8s"
+              logProfileP95Sum:
+                type: string
+                default: "9s"
+              logProfileP99Sum:
+                type: string
+                default: "9.5s"
+              logProfileP99_9Sum:
+                type: string
+                default: "9.9s"
+              logProfileP99_99Sum:
+                type: string
+                default: "9.99s"
+              logProfileP99_999Sum:
+                type: string
+                default: "9.999s"
+              logProfileP100Sum:
+                type: string
+                default: "10s"
+              logProfileCountSum:
+                type: integer
+                default: 100
+              logProfileRateSum:
+                type: string
+                default: "1/s"
+              logProfileSumSum:
+                type: string
+                default: "10s"
+              logProfileMinCount:
+                type: integer
+                default: 1
+              logProfileMaxCount:
+                type: integer
+                default: 1000
+              logProfileMeanCount:
+                type: integer
+                default: 100
+              logProfileStdDevCount:
+                type: integer
+                default: 50
+              logProfileP50Count:
+                type: integer
+                default: 100
+              logProfileP90Count:
+                type: integer
+                default: 900
+              logProfileP95Count:
+                type: integer
+                default: 950
+              logProfileP99Count:
+                type: integer
+                default: 990
+              logProfileP99_9Count:
+                type: integer
+                default: 999
+              logProfileP99_99Count:
+                type: integer
+                default: 999
+              logProfileP99_999Count:
+                type: integer
+                default: 999
+              logProfileP100Count:
+                type: integer
+                default: 1000
+              logProfileCountCount:
+                type: integer
+                default: 100
+              logProfileRateCount:
+                type: string
+                default: "1/s"
+              logProfileSumCount:
+                type: integer
+                default: 10000
+              logProfileMinRate:
+                type: string
+                default: "0.1/s"
+              logProfileMaxRate:
+                type: string
+                default: "10/s"
+              logProfileMeanRate:
+                type: string
+                default: "1/s"
+              logProfileStdDevRate:
+                type: string
+                default: "0.5/s"
+              logProfileP50Rate:
+                type: string
+                default: "1/s"
+              logProfileP90Rate:
+                type: string
+                default: "5/s"
+              logProfileP95Rate:
+                type: string
+                default: "10/s"
+              logProfileP99Rate:
+                type: string
+                default: "50/s"
+              logProfileP99_9Rate:
+                type: string
+                default: "100/s"
+              logProfileP99_99Rate:
+                type: string
+                default: "500/s"
+              logProfileP99_999Rate:
+                type: string
+                default: "1000/s"
+              logProfileP100Rate:
+                type: string
+                default: "1000/s"
+              logProfileCountRate:
+                type: integer
+                default: 100
+              logProfileSumRate:
+                type: string
+                default: "1/s"
+              logProfileMinSum:
+                type: string
+                default: "1s"
+              logProfileMaxSum:
+                type: string
+                default: "10s"
+              logProfileMeanSum:
+                type: string
+                default: "5s"
+              logProfileStdDevSum:
+                type: string
+                default: "2s"
+              logProfileP50Sum:
+                type: string
+                default: "5s"
+              logProfileP90Sum:
+                type: string
+                default: "8s"
+              logProfileP95Sum:
+                type: string
+                default: "9s"
+              logProfileP99Sum:
+                type: string
+                default: "9.5s"
+              logProfileP99_9Sum:
+                type: string
+                default: "9.9s"
+              logProfileP99_99Sum:
+                type: string
+                default: "9.99s"
+              logProfileP99_999Sum:
+                type: string
+                default: "9.999s"
+              logProfileP100Sum:
+                type: string
+                default: "10s"
+              logProfileCountSum:
+                type: integer
+                default: 100
+              logProfileRateSum:
+                type: string
+                default: "1/s"
+              logProfileSumSum:
+                type: string
+                default: "10s"
+              logProfileMinCount:
+                type: integer
+                default: 1
+              logProfileMaxCount:
+                type: integer
+                default: 1000
+              logProfileMeanCount:
+                type: integer
+                default: 100
+              logProfileStdDevCount:
+                type: integer
+                default: 50
+              logProfileP50Count:
+                type: integer
+                default: 100
+              logProfileP90Count:
+                type: integer
+                default: 900
+              logProfileP95Count:
+                type: integer
+                default: 950
+              logProfileP99Count:
+                type: integer
+                default: 990
+              logProfileP99_9Count:
+                type: integer
+                default: 999
+              logProfileP99_99Count:
+                type: integer
+                default: 999
+              logProfileP99_999Count:
+                type: integer
+                default: 999
+              logProfileP100Count:
+                type: integer
+                default: 1000
+              logProfileCountCount:
+                type: integer
+                default: 100
+              logProfileRateCount:
+                type: string
+                default: "1/s"
+              logProfileSumCount:
+                type: integer
+                default: 10000
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+                enum: ["Initialization", "Running", "Finished", "Error"]
+              stage:
+                type: string
+                enum: ["Initialization", "Setup", "Running", "Teardown", "Finished"]
+              currentJobs:
+                type: integer
+              totalJobs:
+                type: integer
+              runningJobs:
+                type: integer
+              finishedJobs:
+                type: integer
+              errorJobs:
+                type: integer
+              lastUpdated:
+                type: string
+                format: date-time
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      description: The current phase of the k6 test
+      jsonPath: .status.phase
+    - name: Stage
+      type: string
+      description: The current stage of the k6 test
+      jsonPath: .status.stage
+    - name: Jobs
+      type: string
+      description: Job status
+      jsonPath: .status.currentJobs
+    - name: Age
+      type: date
+      description: The age of the k6 test
+      jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: k6s
+    singular: k6
+    kind: K6
+    shortNames:
+    - k6
+    - k6s

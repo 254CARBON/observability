@@ -1,0 +1,60 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: pyroscope-profiling-rules
+  namespace: observability
+  labels:
+    prometheus: k8s
+    role: profiling-rules
+spec:
+  groups:
+    - name: pyroscope.profiling.rules
+      rules:
+        # CPU profiling overhead monitoring
+        - record: pyroscope:cpu_overhead_percent
+          expr: |
+            (
+              sum(rate(pyroscope_cpu_samples_total[5m])) * 0.01
+            ) / (
+              sum(rate(container_cpu_usage_seconds_total[5m])) * 100
+            ) * 100
+          labels:
+            component: "profiling"
+            
+        # Memory profiling overhead monitoring
+        - record: pyroscope:memory_overhead_bytes
+          expr: |
+            sum(pyroscope_memory_samples_bytes) * 0.01
+          labels:
+            component: "profiling"
+            
+        # Profile storage usage
+        - record: pyroscope:storage_usage_bytes
+          expr: |
+            sum(pyroscope_storage_bytes)
+          labels:
+            component: "profiling"
+            
+        # Profile compression ratio
+        - record: pyroscope:compression_ratio
+          expr: |
+            sum(pyroscope_storage_bytes) / sum(pyroscope_storage_uncompressed_bytes)
+          labels:
+            component: "profiling"
+            
+        # Profile retention efficiency
+        - record: pyroscope:retention_efficiency_percent
+          expr: |
+            (
+              sum(pyroscope_storage_bytes) - sum(pyroscope_storage_bytes_7d_ago)
+            ) / sum(pyroscope_storage_bytes) * 100
+          labels:
+            component: "profiling"
+            
+        # Profile sampling rate effectiveness
+        - record: pyroscope:sampling_effectiveness
+          expr: |
+            sum(rate(pyroscope_cpu_samples_total[5m])) / 
+            sum(rate(container_cpu_usage_seconds_total[5m])) * 100
+          labels:
+            component: "profiling"
