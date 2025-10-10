@@ -6,6 +6,23 @@
 
 .PHONY: help deploy-core deploy-traces deploy-logs validate clean reload-dashboards test-alerts
 
+WORK_DIR := $(shell pwd)
+PROMTOOL_IMAGE ?= prom/prometheus:v2.45.0
+PROMTOOL_DOCKER := docker run --rm -v $(WORK_DIR):/work --entrypoint /bin/promtool $(PROMTOOL_IMAGE)
+PROMTOOL_BIN := $(shell command -v promtool 2>/dev/null)
+ifeq ($(PROMTOOL_BIN),)
+PROMTOOL_CMD := $(PROMTOOL_DOCKER)
+else
+PROMTOOL_CMD := promtool
+endif
+
+PROM_RULE_GENERAL_FILE := k8s/prometheus/rules/general-rules.yaml
+PROM_RULE_GENERAL_KEY := general-rules.yaml
+PROM_RULE_SLO_FILE := k8s/prometheus/rules/slo-burn-rules.yaml
+PROM_RULE_SLO_KEY := slo-burn-rules.yaml
+ALERTMANAGER_FILE := k8s/prometheus/alertmanager.yaml
+ALERTMANAGER_KEY := alertmanager.yml
+
 # Default target
 help:
 	@echo "254Carbon Observability Platform"
@@ -133,10 +150,20 @@ validate:
 	@echo "Validating dashboard JSON files..."
 	python3 scripts/validate_dashboards.py dashboards/access/gateway_overview.json
 	@echo "Validating Prometheus rule files..."
-	promtool check rules k8s/prometheus/rules/general-rules.yaml
-	promtool check rules k8s/prometheus/rules/slo-burn-rules.yaml
+	@echo "Using $(PROMTOOL_CMD) for Prometheus rule validation."
+	@tmp=$$(mktemp); \
+	python3 scripts/extract_configmap_data.py $(PROM_RULE_GENERAL_FILE) $(PROM_RULE_GENERAL_KEY) > $$tmp; \
+	$(PROMTOOL_CMD) check rules $$tmp; \
+	rm -f $$tmp
+	@tmp=$$(mktemp); \
+	python3 scripts/extract_configmap_data.py $(PROM_RULE_SLO_FILE) $(PROM_RULE_SLO_KEY) > $$tmp; \
+	$(PROMTOOL_CMD) check rules $$tmp; \
+	rm -f $$tmp
 	@echo "Validating Alertmanager configuration..."
-	promtool check config k8s/prometheus/alertmanager.yaml
+	@tmp=$$(mktemp); \
+	python3 scripts/extract_configmap_data.py $(ALERTMANAGER_FILE) $(ALERTMANAGER_KEY) > $$tmp; \
+	$(PROMTOOL_CMD) check config $$tmp; \
+	rm -f $$tmp
 	@echo "All validations passed"
 
 # Reload dashboards
