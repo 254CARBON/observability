@@ -47,6 +47,27 @@ data:
         expr: histogram_quantile(0.99, rate(gateway_http_request_duration_seconds_bucket[5m]))
         labels:
           service: gateway
+
+      # Served cache warming metrics
+      - record: gateway:served_cache_warm_hits:rate5m
+        expr: rate(gateway_served_cache_warm_total{result="hit"}[5m])
+        labels:
+          service: gateway
+
+      - record: gateway:served_cache_warm_errors:rate5m
+        expr: rate(gateway_served_cache_warm_total{result="error"}[5m])
+        labels:
+          service: gateway
+
+      - record: gateway:served_cache_warm_duration_seconds:p95
+        expr: histogram_quantile(0.95, sum by (projection_type, le) (rate(gateway_served_cache_warm_duration_seconds_bucket[5m])))
+        labels:
+          service: gateway
+
+      - record: gateway:served_projection_age_seconds:p95
+        expr: histogram_quantile(0.95, sum by (projection_type, le) (rate(gateway_served_projection_age_seconds_bucket[5m])))
+        labels:
+          service: gateway
       
       # Data pipeline metrics
       - record: ingestion:connector_runs:rate5m

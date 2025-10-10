@@ -17,7 +17,7 @@ Out of scope: application-specific instrumentation logic (maintained in each ser
 
 ## Components
 - `k8s/` – Kubernetes manifests (base, Prometheus, Grafana, OTel collector, Tempo, Pyroscope, Loki (future), synthetic tooling).
-- `dashboards/` – Provisioned Grafana JSON for each domain plus synthetic/capacity/profiling views.
+- `dashboards/` – Provisioned Grafana JSON for each domain plus synthetic/capacity/profiling views (e.g., `access/gateway_overview.json`, `access/gateway_served_cache.json`).
 - `alerts/` – Prometheus rule groups (RED, SLO, ML, infra).
 - `scripts/` – Validation (`validate_dashboards.py`), alert smoke tests (`test_alerts.sh`), synthetic probes.
 - `Makefile` – Deploy, validate, and status targets.

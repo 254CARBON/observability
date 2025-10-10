@@ -79,6 +79,37 @@ data:
           summary: "Gateway SLO burn rate warning (slow window)"
           description: "Error budget burn rate is {{ $value }}x normal (threshold: 1x)"
           runbook_url: "https://docs.254carbon.local/runbooks/gateway-slo-burn"
+
+      # Served cache warm failures
+      - alert: ALERT_GATEWAY_SERVED_CACHE_WARM_ERRORS
+        expr: gateway:served_cache_warm_errors:rate5m > 0.02
+        for: 5m
+        labels:
+          severity: warning
+          service: gateway
+          alert_type: cache_warm
+        annotations:
+          summary: "Gateway served cache warm errors detected"
+          description: "Cache warm errors are {{ $value | humanizePercentage }} over the last 5 minutes"
+          runbook_url: "https://docs.254carbon.local/runbooks/gateway-cache-warm"
+
+      # Served projection lag
+      - alert: ALERT_GATEWAY_SERVED_PROJECTION_LAG
+        expr: |
+          (
+            gateway:served_projection_age_seconds:p95{projection_type="latest_price"} > 60
+            or
+            gateway:served_projection_age_seconds:p95{projection_type="curve_snapshot"} > 600
+          )
+        for: 10m
+        labels:
+          severity: warning
+          service: gateway
+          alert_type: freshness
+        annotations:
+          summary: "Served projection freshness degradation detected"
+          description: "Latest price p95 age {{ with query \"gateway:served_projection_age_seconds:p95{projection_type=\\\"latest_price\\\"}\" }}{{ . | first | value }}{{ end }}s or curve snapshot p95 age exceeds thresholds."
+          runbook_url: "https://docs.254carbon.local/runbooks/gateway-cache-warm"
       
       # Service Down Alert
       - alert: ALERT_GATEWAY_SERVICE_DOWN

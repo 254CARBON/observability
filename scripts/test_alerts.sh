@@ -61,13 +61,18 @@ generate_test_metrics() {
             done
             echo "Generated 50 slow requests"
             ;;
+        "gateway_served_cache_warm")
+            echo "Triggering cache warm to populate metrics (errors require projection outage simulation)."
+            curl -s -X POST "http://localhost:8080/api/v1/cache/warm" \
+                -H "Authorization: Bearer dev-key" > /dev/null 2>&1 || true
+            ;;
         "streaming_connection_churn")
             # This would require actual WebSocket connections
             echo "Streaming connection churn test requires WebSocket client"
             ;;
         *)
             echo -e "${RED}❌ Unknown alert type: $alert_type${NC}"
-            echo "Available types: gateway_high_error, gateway_latency_degradation, streaming_connection_churn"
+            echo "Available types: gateway_high_error, gateway_latency_degradation, gateway_served_cache_warm, streaming_connection_churn"
             return 1
             ;;
     esac
@@ -136,6 +141,7 @@ main() {
         echo "Available alert types:"
         echo "  - gateway_high_error"
         echo "  - gateway_latency_degradation"
+        echo "  - gateway_served_cache_warm"
         echo "  - streaming_connection_churn"
         exit 1
     fi
@@ -171,6 +177,12 @@ main() {
         "gateway_latency_degradation")
             check_alert_status "ALERT_GATEWAY_LATENCY_DEGRADATION"
             check_alertmanager "ALERT_GATEWAY_LATENCY_DEGRADATION"
+            ;;
+        "gateway_served_cache_warm")
+            check_alert_status "ALERT_GATEWAY_SERVED_CACHE_WARM_ERRORS"
+            check_alertmanager "ALERT_GATEWAY_SERVED_CACHE_WARM_ERRORS"
+            check_alert_status "ALERT_GATEWAY_SERVED_PROJECTION_LAG"
+            check_alertmanager "ALERT_GATEWAY_SERVED_PROJECTION_LAG"
             ;;
         "streaming_connection_churn")
             check_alert_status "ALERT_STREAMING_CONNECTION_CHURN"

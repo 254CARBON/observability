@@ -148,7 +148,7 @@ deploy-logs:
 # Validate configurations
 validate:
 	@echo "Validating dashboard JSON files..."
-	python3 scripts/validate_dashboards.py dashboards/access/gateway_overview.json
+	python3 scripts/validate_dashboards.py dashboards/access/gateway_overview.json dashboards/access/gateway_served_cache.json
 	@echo "Validating Prometheus rule files..."
 	@echo "Using $(PROMTOOL_CMD) for Prometheus rule validation."
 	@tmp=$$(mktemp); \

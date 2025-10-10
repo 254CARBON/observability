@@ -204,6 +204,7 @@ deploy_dashboards() {
     # Create ConfigMap for dashboards
     kubectl create configmap grafana-dashboards \
         --from-file=dashboards/access/gateway_overview.json \
+        --from-file=dashboards/access/gateway_served_cache.json \
         --dry-run=client -o yaml | kubectl apply -f -
     
     print_status $GREEN "✅ Dashboards deployed"

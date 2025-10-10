@@ -74,6 +74,7 @@ configMapGenerator:
   - name: grafana-dashboards
     files:
       - dashboards/access/gateway_overview.json
+      - dashboards/access/gateway_served_cache.json
     options:
       labels:
         app.kubernetes.io/name: grafana-dashboards
