@@ -282,6 +282,12 @@ span.add_event("database.query.start", {
 })
 ```
 
+### 5. Trace Context Propagation
+
+- **Access layer (FastAPI)** – shared middleware now emits `X-Request-Id`, `traceparent`, and `tracestate` on every response (Task Manager is the reference implementation). Forward those headers on outbound calls and copy `X-Request-Id` into application logs for correlation.
+- **Data processing services** – the `AsyncService` framework wraps aiohttp handlers with identical header injection and structured logging; no additional work is required when adding routes.
+- **Analytics artifacts** – Scenario DSL catalog exports persist W3C trace context in `metadata.trace_context`, making it possible to jump from an artifact revision back to the Tempo/Jaeger trace that produced it.
+
 ## Logging Integration
 
 ### Structured Logging with Trace Correlation

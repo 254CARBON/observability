@@ -68,6 +68,35 @@ data:
         expr: histogram_quantile(0.95, sum by (projection_type, le) (rate(gateway_served_projection_age_seconds_bucket[5m])))
         labels:
           service: gateway
+
+      # Task Manager service metrics (Access)
+      - record: task_manager:http_requests:rate5m
+        expr: sum by (job) (rate(http_requests_total{job="task-manager"}[5m]))
+        labels:
+          service: task-manager
+
+      - record: task_manager:http_error_rate:ratio5m
+        expr: |
+          sum(rate(http_requests_total{job="task-manager", status_code=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(http_requests_total{job="task-manager"}[5m])), 0.001)
+        labels:
+          service: task-manager
+
+      - record: task_manager:http_request_duration_seconds:p95
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job="task-manager"}[5m])))
+        labels:
+          service: task-manager
+
+      - record: task_manager:errors:rate5m
+        expr: sum(rate(errors_total{service="task-manager"}[5m]))
+        labels:
+          service: task-manager
+
+      - record: task_manager:business_events:rate5m
+        expr: sum(rate(business_events_total{service="task-manager"}[5m]))
+        labels:
+          service: task-manager
       
       # Data pipeline metrics
       - record: ingestion:connector_runs:rate5m
@@ -82,6 +111,39 @@ data:
       
       - record: normalization:records_processed:rate5m
         expr: rate(normalization_records_processed_total[5m])
+        labels:
+          service: normalization
+
+      - record: normalization:messages_processed:rate5m
+        expr: sum(rate(normalization_messages_processed_total[5m]))
+        labels:
+          service: normalization
+
+      - record: normalization:messages_processed_by_status:rate5m
+        expr: sum by (status) (rate(normalization_messages_processed_total[5m]))
+        labels:
+          service: normalization
+
+      - record: normalization:errors:rate5m
+        expr: sum(rate(normalization_errors_total[5m]))
+        labels:
+          service: normalization
+
+      - record: normalization:error_ratio:ratio5m
+        expr: |
+          sum(rate(normalization_errors_total[5m]))
+          /
+          clamp_min(sum(rate(normalization_messages_processed_total[5m])), 0.001)
+        labels:
+          service: normalization
+
+      - record: normalization:processing_duration_seconds:p95
+        expr: histogram_quantile(0.95, sum by (le) (rate(normalization_processing_duration_seconds_bucket[5m])))
+        labels:
+          service: normalization
+
+      - record: normalization:dlq_messages:rate5m
+        expr: sum(rate(normalization_messages_processed_total{status=~"failed|dlq"}[5m]))
         labels:
           service: normalization
       

@@ -17,8 +17,8 @@ Out of scope: application-specific instrumentation logic (maintained in each ser
 
 ## Components
 - `k8s/` – Kubernetes manifests (base, Prometheus, Grafana, OTel collector, Tempo, Pyroscope, Loki (future), synthetic tooling).
-- `dashboards/` – Provisioned Grafana JSON for each domain plus synthetic/capacity/profiling views (e.g., `access/gateway_overview.json`, `access/gateway_served_cache.json`).
-- `alerts/` – Prometheus rule groups (RED, SLO, ML, infra).
+- `dashboards/` – Provisioned Grafana JSON for each domain plus synthetic/capacity/profiling views (e.g., `access/gateway_overview.json`, `access/gateway_served_cache.json`, `access/task_manager_overview.json`, `data_processing/normalization_pipeline.json`).
+- `alerts/` – Prometheus rule groups (RED, SLO, ML, infra) including new Task Manager and normalization RED bundles.
 - `scripts/` – Validation (`validate_dashboards.py`), alert smoke tests (`test_alerts.sh`), synthetic probes.
 - `Makefile` – Deploy, validate, and status targets.
 - `otel/` – Semantic conventions and instrumentation guidelines.
@@ -45,6 +45,7 @@ Overrides for each environment live under `k8s/overlays/<env>/`.
 - Grafana dashboard `dashboards/rca/observability_health.json` (future) or Prometheus `up{job=~"prometheus|grafana|otel-collector"}` – confirm scrape success.
 - Verify alert pipeline: `curl http://localhost:9090/api/v1/alerts` (via port-forward) should list firing/resolved alerts.
 - Check storage headroom: `kubectl exec prometheus-0 -n observability -- df -h /prometheus`.
+- Spot-check service dashboards with recent changes: Task Manager (`access/task_manager_overview`) and normalization (`data_processing/normalization_pipeline`) should show low error ratios and stable latency.
 
 ### Deploy / Upgrade
 1. Modify configuration (dashboards, rules, collector pipelines).

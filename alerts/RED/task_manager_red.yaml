@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: task-manager-red-alerts
+  namespace: observability
+# RED alerting rules for the Task Manager service (access layer).
+data:
+  task-manager-red.yaml: |
+    groups:
+    - name: task-manager-red
+      rules:
+      - alert: ALERT_TASK_MANAGER_HIGH_ERROR_RATE
+        expr: task_manager:http_error_rate:ratio5m > 0.05
+        for: 3m
+        labels:
+          severity: warning
+          service: task-manager
+          alert_type: error_rate
+        annotations:
+          summary: "Task Manager elevated HTTP error rate"
+          description: "Task Manager 5xx rate is {{ $value | humanizePercentage }} over the last 3 minutes"
+          runbook_url: "https://docs.254carbon.local/runbooks/task-manager-error-rate"
+
+      - alert: ALERT_TASK_MANAGER_LATENCY_P95
+        expr: task_manager:http_request_duration_seconds:p95 > 0.45
+        for: 5m
+        labels:
+          severity: warning
+          service: task-manager
+          alert_type: latency
+        annotations:
+          summary: "Task Manager latency degradation"
+          description: "Task Manager P95 latency is {{ $value }}s (threshold 450ms)"
+          runbook_url: "https://docs.254carbon.local/runbooks/task-manager-latency"
+
+      - alert: ALERT_TASK_MANAGER_UNHANDLED_EXCEPTIONS
+        expr: task_manager:errors:rate5m > 0.5
+        for: 2m
+        labels:
+          severity: critical
+          service: task-manager
+          alert_type: exceptions
+        annotations:
+          summary: "Task Manager unhandled exceptions breaching threshold"
+          description: "Unhandled exception rate is {{ $value }} per second."
+          runbook_url: "https://docs.254carbon.local/runbooks/task-manager-exceptions"
+
+      - alert: ALERT_TASK_MANAGER_SERVICE_DOWN
+        expr: up{job="task-manager"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: task-manager
+          alert_type: availability
+        annotations:
+          summary: "Task Manager service unreachable"
+          description: "Prometheus scraping task-manager reports target down."
+          runbook_url: "https://docs.254carbon.local/runbooks/task-manager-service-down"
