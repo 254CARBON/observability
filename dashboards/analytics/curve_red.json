@@ -46,7 +46,7 @@
             },
             "lineInterpolation": "linear",
             "lineWidth": 1,
-            "pointSize": 5,
+            "pointSize": 4,
             "scaleDistribution": {
               "type": "linear"
             },
@@ -70,7 +70,7 @@
               },
               {
                 "color": "red",
-                "value": 80
+                "value": 100
               }
             ]
           },
@@ -102,9 +102,9 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (method, endpoint) (rate(http_requests_total{job=\"gateway\"}[5m]))",
+          "expr": "sum by (method, route) (rate(analytics_http_requests_total{service=\"curve-service\"}[5m]))",
           "interval": "",
-          "legendFormat": "{{method}} {{endpoint}}",
+          "legendFormat": "{{method}} {{route}}",
           "refId": "A"
         }
       ],
@@ -126,7 +126,7 @@
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 10,
+            "fillOpacity": 15,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -134,8 +134,8 @@
               "vis": false
             },
             "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
+            "lineWidth": 2,
+            "pointSize": 4,
             "scaleDistribution": {
               "type": "linear"
             },
@@ -146,7 +146,7 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "line"
             }
           },
           "mappings": [],
@@ -191,7 +191,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(http_requests_total{job=\"gateway\",status_code=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"gateway\"}[5m]))",
+          "expr": "sum(rate(analytics_http_requests_total{service=\"curve-service\",status_code=~\"5..\"}[5m])) / sum(rate(analytics_http_requests_total{service=\"curve-service\"}[5m]))",
           "interval": "",
           "legendFormat": "Error Rate",
           "refId": "A"
@@ -215,7 +215,7 @@
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 10,
+            "fillOpacity": 15,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -223,214 +223,8 @@
               "vis": false
             },
             "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.1
-              },
-              {
-                "color": "red",
-                "value": 0.15
-              }
-            ]
-          },
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 8
-      },
-      "id": 3,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{job=\"gateway\"}[5m])) by (le))",
-          "interval": "",
-          "legendFormat": "P50",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"gateway\"}[5m])) by (le))",
-          "interval": "",
-          "legendFormat": "P95",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"gateway\"}[5m])) by (le))",
-          "interval": "",
-          "legendFormat": "P99",
-          "refId": "C"
-        }
-      ],
-      "title": "Request Duration (RED)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "vis": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.8
-              },
-              {
-                "color": "red",
-                "value": 0.95
-              }
-            ]
-          },
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
-      },
-      "id": 4,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "gateway:error_budget:remaining",
-          "interval": "",
-          "legendFormat": "Error Budget Remaining",
-          "refId": "A"
-        }
-      ],
-      "title": "SLO Error Budget",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "vis": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
+            "lineWidth": 2,
+            "pointSize": 4,
             "scaleDistribution": {
               "type": "linear"
             },
@@ -458,7 +252,7 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -466,9 +260,9 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 8
       },
-      "id": 5,
+      "id": 3,
       "options": {
         "legend": {
           "calcs": [],
@@ -486,13 +280,33 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "up{job=\"gateway\"}",
+          "expr": "histogram_quantile(0.50, sum(rate(analytics_http_request_duration_seconds_bucket{service=\"curve-service\"}[5m])) by (le))",
           "interval": "",
-          "legendFormat": "Gateway Service",
+          "legendFormat": "P50",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(analytics_http_request_duration_seconds_bucket{service=\"curve-service\"}[5m])) by (le))",
+          "interval": "",
+          "legendFormat": "P95",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum(rate(analytics_http_request_duration_seconds_bucket{service=\"curve-service\"}[5m])) by (le))",
+          "interval": "",
+          "legendFormat": "P99",
+          "refId": "C"
         }
       ],
-      "title": "Service Availability",
+      "title": "Request Duration (RED)",
       "type": "timeseries"
     }
   ],
@@ -500,9 +314,9 @@
   "schemaVersion": 38,
   "style": "dark",
   "tags": [
-    "gateway",
+    "curve",
     "red",
-    "slo"
+    "analytics"
   ],
   "templating": {
     "list": []
@@ -513,8 +327,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Gateway Overview (RED Metrics)",
-  "uid": "gateway-overview",
+  "title": "Curve Service RED Metrics",
+  "uid": "curve-red",
   "version": 1,
   "weekStart": ""
 }
